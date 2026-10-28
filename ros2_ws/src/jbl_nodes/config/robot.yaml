@@ -1,0 +1,40 @@
+# Parameters for robot_record.launch.py and robot_policy.launch.py on autoJetsonBot.
+# Only values that are specific to the robot or must agree between nodes are listed; everything
+# else is each node's default (docs/INTERFACES.md). The safety gate reads jbl_safety's own
+# config/safety_gate.yaml first, then this file.
+# Doubles are written with a decimal point: Humble and newer reject 10 for a double parameter.
+
+# Calibrate both on your robot (docs/PROTOCOL.md sections 4 and 5) and write them here: this
+# section reaches every node, so safety_gate, dock_judge and servo_baseline cannot disagree.
+/**:
+  ros__parameters:
+    forward_angle: 0.0   # /scan angle that points straight ahead (URDF yaw 0; may be pi)
+    hfov_rad: 1.396      # 80 deg per INTERFACES.md; a stock Pi Camera v2 lens is 62.2 deg = 1.086
+
+camera_node:
+  ros__parameters:
+    source: camera
+    # OpenCV device index, path or GStreamer pipeline. For the Pi Camera v2 on the Nano's CSI
+    # port use the nvarguscamerasrc pipeline from camera_node's docstring.
+    device: 0
+    width: 640
+    height: 480
+    fps: 30.0
+    compressed_fps: 15.0  # the recorded stream (about 2 GB per hour of bag)
+    jpeg_quality: 85
+    frame_id: camera_link
+
+dock_judge:
+  ros__parameters:
+    image_topic: /camera/image_raw/compressed
+    auto_end: true
+
+servo_baseline:
+  ros__parameters:
+    image_topic: /camera/image_raw/compressed
+
+policy_runner:
+  ros__parameters:
+    image_topic: /camera/image_raw/compressed
+    rate_hz: 10.0
+    max_image_age: 0.2

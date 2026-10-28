@@ -1,0 +1,35 @@
+# Host tools in tools/ and their tests (tests/), off-robot, Python 3.12, CPU or CUDA.
+#   uv pip install -r requirements-tools.txt        (or: pip install -r requirements-tools.txt)
+# These versions were installed and tested together (HF_HUB_OFFLINE=1, CPU).
+# The robot side (ROS 2 Foxy, Python 3.8) does not use this file.
+
+# Dataset format, lerobot-train (ACT). The [dataset] extra brings datasets, pyarrow, pandas<3,
+# PyAV (video encoding) and torchcodec (video decoding); without it LeRobotDataset does not import.
+lerobot[dataset]==0.6.1
+datasets==4.8.5
+pyarrow==26.0.0
+pandas==2.3.3
+av==15.1.0
+torchcodec==0.11.1
+
+torch==2.11.0
+torchvision==0.26.0
+numpy==2.2.6
+opencv-python-headless==4.13.0.92   # includes cv2.aruco (new API) for make_marker.py
+
+# Reading Foxy sqlite3 and Jazzy mcap bags without ROS
+rosbags==0.11.9
+
+# ONNX export and parity check; onnxscript backs torch's torch.export-based exporter (fallback)
+onnx==1.23.2
+onnxruntime==1.31.0
+onnxscript==0.7.2
+
+matplotlib==3.11.2   # make_marker.py PDF/PNG, analyze_trials.py chart
+pillow==12.3.0
+scipy==1.18.1        # stats.py (normal, beta and binomial distributions)
+pyyaml==6.0.3        # make_schedule.py --pose-table
+
+# tests only
+pytest==9.2.0
+statsmodels==0.15.0  # reference values in tests/test_stats.py

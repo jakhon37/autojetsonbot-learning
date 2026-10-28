@@ -1,0 +1,33 @@
+# Parameters for sim_dock.launch.py (fake_robot). Only values that are specific to the
+# simulation or must agree between nodes are listed; everything else is each node's default.
+# Doubles are written with a decimal point: Humble and newer reject 10 for a double parameter.
+
+/**:
+  ros__parameters:
+    forward_angle: 0.0   # fake_robot's beam at angle 0 points straight ahead
+    hfov_rad: 1.396      # fake_robot's camera (sim_world.CameraConfig)
+
+fake_robot:
+  ros__parameters:
+    box_x: 1.5           # front face centre (m) in the 4 x 3 m room
+    box_y: 0.0
+    box_yaw: 3.14159265  # the face looks along -x
+    camera_fps: 15.0     # the rate camera_node records /camera/image_raw/compressed at
+    scan_rate: 10.0      # RPLidar A1
+    jpeg_quality: 85
+    cmd_timeout: 0.5     # backstop only; the gate already zeroes /cmd_vel after 0.3 s
+
+dock_judge:
+  ros__parameters:
+    image_topic: /camera/image_raw/compressed
+    auto_end: true
+
+servo_baseline:
+  ros__parameters:
+    image_topic: /camera/image_raw/compressed
+
+policy_runner:
+  ros__parameters:
+    image_topic: /camera/image_raw/compressed
+    rate_hz: 10.0
+    max_image_age: 0.2

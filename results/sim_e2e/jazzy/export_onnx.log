@@ -1,0 +1,2 @@
+onnxruntime vs torch: max |diff| 5.36e-07 over 8 random + 32 dataset inputs (tolerance 1e-04)
+wrote sim_work/runs/bc/policy.onnx (torchscript exporter, opset 13, onnxruntime CPU p50 11.8 ms) + policy_meta.json

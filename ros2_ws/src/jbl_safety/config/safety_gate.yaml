@@ -1,0 +1,14 @@
+# Defaults from docs/INTERFACES.md ("Safety gate"). Parameters are read-only at runtime.
+# Load with: ros2 run jbl_safety safety_gate_node --ros-args --params-file <this file>
+/**:
+  ros__parameters:
+    rate_hz: 50.0                 # output timer (Hz); /cmd_vel is published every tick
+    forward_angle: 0.0            # scan angle (rad) that points forward
+    sector_half_angle: 0.35       # +- rad around forward used for the obstacle check
+    stop_distance: 0.17           # m; at or below: forward motion zeroed
+    slow_distance: 0.45           # m; forward speed scales 1 -> 0 between slow and stop
+    treat_invalid_as_close: true  # 0/inf/nan/<range_min after a recent close reading = blocked
+    cmd_timeout: 0.3              # s without /cmd_vel_in -> zero output
+    scan_timeout: 0.5             # s without /scan -> forward blocked, reverse/rotation allowed
+    max_linear: 0.25              # m/s clamp
+    max_angular: 1.5              # rad/s clamp

@@ -1,0 +1,41 @@
+# Fixed start poses for the docking trials (docs/INTERFACES.md, "Evaluation protocol").
+# fake_robot teleports here on "/episode/event: start <method> <pose_id> <round>"; on the real
+# floor, mark the same poses with tape, measured from the box front face.
+#
+# Every pose is relative to the box FRONT FACE (the one with the marker), so it holds for any
+# box placement:
+#   distance_m   from the front face plane to base_link (robot centre), along the face normal
+#   lateral_m    along the face from its centre; positive = to the robot's LEFT when it faces
+#                the box squarely
+#   heading_deg  robot heading relative to facing the face squarely (perpendicular to it);
+#                positive = turned left (counter-clockwise)
+# Ranges: distance 0.80-1.60 m, |lateral| <= 0.50 m, |heading| <= 40 deg. The front bumper is
+# about 0.097 m ahead of base_link, so it starts 0.70-1.50 m from the box.
+#
+# What the camera (HFOV 80 deg, so +-40 deg) sees at the start. "bearing" is the marker centre's
+# angle from the optical axis, positive = left; "turn" is the in-place rotation after which the
+# marker is fully in view and detected (measured in the simulator, test_sim_world.py checks it).
+# World pose is for fake_robot's default box (front face centre at (1.5, 0), facing -x).
+#
+#   id  dist  lateral  heading | world x, y, yaw      | bearing | start view
+#    0  1.00   0.00      0     |  0.50,  0.00,   0    |   0.0   | visible, centred
+#    1  1.20  +0.30      0     |  0.30,  0.30,   0    | -15.3   | visible
+#    2  1.20  -0.30      0     |  0.30, -0.30,   0    | +15.3   | visible
+#    3  0.80  +0.25    -20     |  0.70,  0.25, -20    |  +3.0   | visible (pointing at it, offset)
+#    4  0.90  -0.40    +30     |  0.60, -0.40, +30    |  -6.7   | visible (pointing at it, offset)
+#    5  0.85  +0.50    +40     |  0.65,  0.50, +40    | -76.1   | out of view, ~37 deg right turn
+#    6  1.50  -0.50    -25     |  0.00, -0.50, -25    | +46.0   | out of view, ~8 deg left turn
+#    7  1.60   0.00    +40     | -0.10,  0.00, +40    | -42.4   | out of view, ~5 deg right turn
+#    8  1.10  +0.10    -40     |  0.40,  0.10, -40    | +38.0   | partly visible at the left edge
+#    9  1.40  -0.45    -35     |  0.10, -0.45, -35    | +56.1   | out of view, ~18 deg left turn
+start_poses:
+  - {pose_id: 0, distance_m: 1.00, lateral_m: 0.00, heading_deg: 0.0}
+  - {pose_id: 1, distance_m: 1.20, lateral_m: 0.30, heading_deg: 0.0}
+  - {pose_id: 2, distance_m: 1.20, lateral_m: -0.30, heading_deg: 0.0}
+  - {pose_id: 3, distance_m: 0.80, lateral_m: 0.25, heading_deg: -20.0}
+  - {pose_id: 4, distance_m: 0.90, lateral_m: -0.40, heading_deg: 30.0}
+  - {pose_id: 5, distance_m: 0.85, lateral_m: 0.50, heading_deg: 40.0}
+  - {pose_id: 6, distance_m: 1.50, lateral_m: -0.50, heading_deg: -25.0}
+  - {pose_id: 7, distance_m: 1.60, lateral_m: 0.00, heading_deg: 40.0}
+  - {pose_id: 8, distance_m: 1.10, lateral_m: 0.10, heading_deg: -40.0}
+  - {pose_id: 9, distance_m: 1.40, lateral_m: -0.45, heading_deg: -35.0}

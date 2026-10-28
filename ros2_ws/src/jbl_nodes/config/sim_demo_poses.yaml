@@ -1,0 +1,65 @@
+# Start poses for the scripted demonstrations in simulation (scripts/sim_e2e.sh), the sim
+# counterpart of the 20 teleop training spots of docs/PROTOCOL.md section 6.
+#
+# fake_robot needs pose ids 0..N-1 in one file, so ids 0-9 repeat the test poses of
+# start_poses.yaml unchanged (test_sim_demo_poses.py checks that) and are NOT used for demos;
+# the demos start only from the training spots 10-29. Same conventions as start_poses.yaml
+# (distance / lateral / heading relative to the box front face).
+#
+# The spots were drawn at random (numpy seed 20261028) from distance 0.70-1.70 m, |lateral|
+# <= 0.55 m, |heading| <= 45 deg, keeping each base_link position at least 0.10 m from every
+# test pose and every other spot, with 5 of 20 starting with the marker out of view (found
+# within a 90 deg turn). Bearing and view measured in the simulator for the default box.
+#
+#   id  dist  lateral  heading | world x, y, yaw      | bearing | start view
+#   10  0.72  -0.36   +14   |  0.78, -0.36,  +14    |  +14.3  | visible
+#   11  0.72  +0.07   -39   |  0.78,  0.07,  -39    |  +38.4  | out of view, ~3 deg left turn
+#   12  1.38  +0.14   -29   |  0.12,  0.14,  -29    |  +24.9  | visible
+#   13  0.90  +0.07   +28   |  0.60,  0.07,  +28    |  -36.2  | visible
+#   14  1.27  -0.21   +16   |  0.23, -0.21,  +16    |   -7.2  | visible
+#   15  0.96  +0.42   +23   |  0.54,  0.42,  +23    |  -50.9  | out of view, ~13 deg right turn
+#   16  1.09  -0.22    +8   |  0.41, -0.22,   +8    |   +3.7  | visible
+#   17  1.01  -0.30   +14   |  0.49, -0.30,  +14    |   +2.8  | visible
+#   18  1.13  -0.46   -33   |  0.37, -0.46,  -33    |  +59.2  | out of view, ~21 deg left turn
+#   19  1.19  +0.17   +28   |  0.31,  0.17,  +28    |  -39.1  | out of view, ~2 deg right turn
+#   20  1.64  +0.26   -36   | -0.14,  0.26,  -36    |  +28.6  | visible
+#   21  1.17  +0.50   +36   |  0.33,  0.50,  +36    |  -63.2  | out of view, ~25 deg right turn
+#   22  0.79  -0.09    -1   |  0.71, -0.09,   -1    |   +8.6  | visible
+#   23  1.12  -0.07    -6   |  0.38, -0.07,   -6    |  +10.5  | visible
+#   24  1.48  +0.08    -1   |  0.02,  0.08,   -1    |   -2.2  | visible
+#   25  1.69  -0.12   -15   | -0.19, -0.12,  -15    |  +20.2  | visible
+#   26  0.88  -0.15   -10   |  0.62, -0.15,  -10    |  +22.1  | visible
+#   27  1.57  -0.26   +13   | -0.07, -0.26,  +13    |   -3.8  | visible
+#   28  1.44  +0.55   +10   |  0.06,  0.55,  +10    |  -32.9  | visible
+#   29  0.76  -0.51   +29   |  0.74, -0.51,  +29    |   +5.5  | visible
+start_poses:
+  - {pose_id: 0, distance_m: 1.00, lateral_m: 0.00, heading_deg: 0.0}
+  - {pose_id: 1, distance_m: 1.20, lateral_m: 0.30, heading_deg: 0.0}
+  - {pose_id: 2, distance_m: 1.20, lateral_m: -0.30, heading_deg: 0.0}
+  - {pose_id: 3, distance_m: 0.80, lateral_m: 0.25, heading_deg: -20.0}
+  - {pose_id: 4, distance_m: 0.90, lateral_m: -0.40, heading_deg: 30.0}
+  - {pose_id: 5, distance_m: 0.85, lateral_m: 0.50, heading_deg: 40.0}
+  - {pose_id: 6, distance_m: 1.50, lateral_m: -0.50, heading_deg: -25.0}
+  - {pose_id: 7, distance_m: 1.60, lateral_m: 0.00, heading_deg: 40.0}
+  - {pose_id: 8, distance_m: 1.10, lateral_m: 0.10, heading_deg: -40.0}
+  - {pose_id: 9, distance_m: 1.40, lateral_m: -0.45, heading_deg: -35.0}
+  - {pose_id: 10, distance_m: 0.72, lateral_m: -0.36, heading_deg: 14.0}
+  - {pose_id: 11, distance_m: 0.72, lateral_m: 0.07, heading_deg: -39.0}
+  - {pose_id: 12, distance_m: 1.38, lateral_m: 0.14, heading_deg: -29.0}
+  - {pose_id: 13, distance_m: 0.90, lateral_m: 0.07, heading_deg: 28.0}
+  - {pose_id: 14, distance_m: 1.27, lateral_m: -0.21, heading_deg: 16.0}
+  - {pose_id: 15, distance_m: 0.96, lateral_m: 0.42, heading_deg: 23.0}
+  - {pose_id: 16, distance_m: 1.09, lateral_m: -0.22, heading_deg: 8.0}
+  - {pose_id: 17, distance_m: 1.01, lateral_m: -0.30, heading_deg: 14.0}
+  - {pose_id: 18, distance_m: 1.13, lateral_m: -0.46, heading_deg: -33.0}
+  - {pose_id: 19, distance_m: 1.19, lateral_m: 0.17, heading_deg: 28.0}
+  - {pose_id: 20, distance_m: 1.64, lateral_m: 0.26, heading_deg: -36.0}
+  - {pose_id: 21, distance_m: 1.17, lateral_m: 0.50, heading_deg: 36.0}
+  - {pose_id: 22, distance_m: 0.79, lateral_m: -0.09, heading_deg: -1.0}
+  - {pose_id: 23, distance_m: 1.12, lateral_m: -0.07, heading_deg: -6.0}
+  - {pose_id: 24, distance_m: 1.48, lateral_m: 0.08, heading_deg: -1.0}
+  - {pose_id: 25, distance_m: 1.69, lateral_m: -0.12, heading_deg: -15.0}
+  - {pose_id: 26, distance_m: 0.88, lateral_m: -0.15, heading_deg: -10.0}
+  - {pose_id: 27, distance_m: 1.57, lateral_m: -0.26, heading_deg: 13.0}
+  - {pose_id: 28, distance_m: 1.44, lateral_m: 0.55, heading_deg: 10.0}
+  - {pose_id: 29, distance_m: 0.76, lateral_m: -0.51, heading_deg: 29.0}

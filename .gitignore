@@ -1,0 +1,27 @@
+# colcon
+build/
+install/
+log/
+build_logs/
+
+# Recordings, datasets and models (large; keep them out of git, publish them elsewhere)
+sim_work/
+data/
+datasets/
+bags/
+runs/
+*.db3
+*.mcap
+*.onnx
+*.onnx.data
+*.engine
+*.pt
+*.ts
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
