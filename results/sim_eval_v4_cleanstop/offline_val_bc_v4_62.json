@@ -1,0 +1,86 @@
+{
+ "root": "sim_work/v4_62/dataset",
+ "val_episodes": [
+  0,
+  10,
+  14,
+  16,
+  18,
+  20,
+  30,
+  34,
+  36
+ ],
+ "frames": 1481,
+ "models": {
+  "bc_v4_62": {
+   "path": "sim_work/v4_62/runs/bc/policy.onnx",
+   "by_label": {
+    "stop_end": {
+     "frames": 100,
+     "label_v_mean": 0.0,
+     "pred_v_mean": 0.0064,
+     "pred_v_median": 0.0061,
+     "pred_below_0.005": 0.32,
+     "pred_below_0.02": 1.0
+    },
+    "moving_end": {
+     "frames": 80,
+     "label_v_mean": 0.0184,
+     "pred_v_mean": 0.0098,
+     "pred_v_median": 0.009,
+     "pred_below_0.005": 0.075,
+     "pred_below_0.02": 1.0
+    },
+    "stop_start": {
+     "frames": 4,
+     "label_v_mean": 0.0009,
+     "pred_v_mean": 0.0021,
+     "pred_v_median": -0.0014,
+     "pred_below_0.005": 0.75,
+     "pred_below_0.02": 1.0
+    },
+    "stop_middle": {
+     "frames": 113,
+     "label_v_mean": 0.0,
+     "pred_v_mean": -0.0005,
+     "pred_v_median": -0.0006,
+     "pred_below_0.005": 1.0,
+     "pred_below_0.02": 1.0
+    },
+    "moving": {
+     "frames": 1184,
+     "label_v_mean": 0.0827,
+     "pred_v_mean": 0.079,
+     "pred_v_median": 0.1025,
+     "pred_below_0.005": 0.002,
+     "pred_below_0.02": 0.081
+    },
+    "stop_end_full": {
+     "frames": 100,
+     "label_v_mean": 0.0,
+     "pred_v_mean": 0.0064,
+     "pred_v_median": 0.0061,
+     "pred_below_0.005": 0.32,
+     "pred_below_0.02": 1.0
+    },
+    "stop_any": {
+     "frames": 217,
+     "label_v_mean": 0.0,
+     "pred_v_mean": 0.0027,
+     "pred_v_median": 0.0002,
+     "pred_below_0.005": 0.682,
+     "pred_below_0.02": 1.0
+    },
+    "moving_any": {
+     "frames": 1264,
+     "label_v_mean": 0.0786,
+     "pred_v_mean": 0.0747,
+     "pred_v_median": 0.0909,
+     "pred_below_0.005": 0.006,
+     "pred_below_0.02": 0.139
+    }
+   }
+  }
+ }
+}

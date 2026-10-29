@@ -1,0 +1,7 @@
+train: 32 episodes / 5062 frames, val: 8 episodes / 1333 frames, device cpu
+epoch   1/5  train_loss 0.0033  val_loss 0.0019  val MAE v 0.018 m/s  w 0.029 rad/s  (mean-command baseline v 0.043  w 0.071)  389.8 s
+epoch   2/5  train_loss 0.0013  val_loss 0.0010  val MAE v 0.011 m/s  w 0.022 rad/s  (mean-command baseline v 0.043  w 0.071)  367.8 s
+epoch   3/5  train_loss 0.0010  val_loss 0.0014  val MAE v 0.013 m/s  w 0.030 rad/s  (mean-command baseline v 0.043  w 0.071)  373.9 s
+epoch   4/5  train_loss 0.0009  val_loss 0.0008  val MAE v 0.011 m/s  w 0.020 rad/s  (mean-command baseline v 0.043  w 0.071)  412.2 s
+epoch   5/5  train_loss 0.0008  val_loss 0.0008  val MAE v 0.011 m/s  w 0.021 rad/s  (mean-command baseline v 0.043  w 0.071)  973.2 s
+best epoch 4 -> sim_work/v4/runs/bc/model.pt (+ policy_meta.json)

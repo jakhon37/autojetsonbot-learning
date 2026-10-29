@@ -227,17 +227,19 @@ have only run against stand-ins.
 ## Results (SIMULATION)
 
 > **SIMULATION ONLY.** Every number in this section comes from `fake_robot` in a Docker
-> container on an x86 laptop CPU, not from autoJetsonBot. It shows that the pipeline runs end
+> container on an x86 CPU, not from autoJetsonBot. It shows that the pipeline runs end
 > to end. It says nothing about how either method does on the real robot.
 
-There are three runs. The **clean run** below has randomisation off and 1 round per pose. It is at
+There are four runs. The **clean run** below has randomisation off and 1 round per pose. It is at
 the ceiling for the servo (10/10) and the floor for BC (0/10), so it says nothing about how
 either method degrades. The **harder evaluation (v2)** after it adds randomisation, start poses
 beyond the training distribution and the robot's 62.2° lens, with 10 poses × 3 rounds per
 condition. Its results are in [results/sim_eval_v2](results/sim_eval_v2/SUMMARY.md). **v3**
 re-records the demonstrations under the corrected judge, retrains BC and evaluates it under the
 same conditions: [results/sim_eval_v3_bcfix](results/sim_eval_v3_bcfix/SUMMARY.md). **v4**
-changes the stop rules and is pre-registered but not run yet (see the end of this section).
+changes the stop rules, adds demonstrations through the robot's lens, and was pre-registered
+before it ran: [results/sim_eval_v4_cleanstop](results/sim_eval_v4_cleanstop/SUMMARY.md) (see
+the end of this section).
 
 ### Clean run (pipeline check; at ceiling for the servo, floor for BC)
 
@@ -426,7 +428,7 @@ What v3 shows:
   from the 0.02 m/s threshold, not from learning to stop. Testing stopping needs demonstrations
   that end on a commanded stop.
 
-### Clean-stop protocol (v4; pre-registered, not run yet)
+### Clean-stop protocol (v4; pre-registered)
 
 v3 showed that the judge's "still" threshold, not a learned stop, decided the BC results. From
 v4 on, two defaults change; [results/sim_eval_v4_cleanstop/PREREG.md](results/sim_eval_v4_cleanstop/PREREG.md)
@@ -452,6 +454,78 @@ has the design, the predictions and the commands.
   the commit without the run's own result files.
 - **The numbers above used the old rules.** The clean run, v2 and v3 are reproduced with
   `request_still_v: 0.02` and `stop_hysteresis: 0.0` (e.g. in `config/sim.yaml`).
+
+### Clean-stop protocol: results (v4)
+
+> **SIMULATION ONLY.** `fake_robot` in `ros:jazzy-ros-base` containers on an x86 CPU, 29 October
+> 2026. Nothing was measured on autoJetsonBot.
+
+The run followed the pre-registered commands once each, from the pre-registration commit
+(b72ba83), with no infrastructure failure. Its one deviation: the write-up file was saved after
+the run, with the review's edits listed in its [run log](results/sim_eval_v4_cleanstop/RUN_LOG.md).
+The write-up is in
+[results/sim_eval_v4_cleanstop/SUMMARY.md](results/sim_eval_v4_cleanstop/SUMMARY.md).
+
+- **Demonstrations.** 40/40 succeeded through the simulator's 80° lens (set A) and 39/40 through
+  the robot's 62.2° lens (set B; in `fake_robot` only the pinhole camera's HFOV changes). Every
+  success requested exactly v = 0 for its whole last second. Full-stop frames at the end make up
+  7.1 % of set A (v3: 2.5 %).
+- **Models.** `bc_v4` was trained on set A (sha256 `ed36c9b6…`) and `bc_v4_62` on set B
+  (`ea29531c…`), each with v3's BC v2 training command unchanged (no stop weighting).
+
+| Condition | servo | bc_v4 | bc_v4_62 | bc_v4 vs servo, b / c, exact p | Stop commanded, bc_v4 | BC successes flagged stale |
+|---|---:|---:|---:|---:|---:|---:|
+| clean_ref | 10/10 | 9/10 | — | 1 / 0, p = 1 | 9/10 | 1 |
+| noise | 30/30 | 27/30 | — | 3 / 0, p = 0.25 | 27/30 | 10 |
+| wide | 27/30 | 16/30 | — | 11 / 0, p = 0.001 | 18/30 | 3 |
+| hfov62 | 30/30 | 0/30 | 23/30 | 30 / 0, p = 1.9e-9 | 30/30, short of the band | 0 (bc_v4), 7 (bc_v4_62) |
+
+In `clean_ref` and `noise`, the `bc_v4` trials that commanded a stop are exactly its successes
+(a success requires it); none of its 4 failures there, all on pose 5, did.
+
+What v4 shows:
+
+- **All five pre-registered predictions were met as scored**, which is how the
+  pre-registration reads them. With the 21 BC successes that the validity check flags counted as
+  failures, P4 (`bc_v4` 17/30 in `noise`, below 24; C1 there 13 / 0) and P5 (`bc_v4_62` 16/30,
+  below 20) would not be met (see Timing).
+- **In distribution, BC brings its request below 0.005 m/s, but not to zero.**
+  - It commanded a stop in 36 of 40 `clean_ref` + `noise` trials, at a median ground-truth
+    lidar range of 0.264 m.
+  - It scored 9/10 and 27/30 against the servo's 10/10 and 30/30. That difference is not
+    significant, but with this little power it is not evidence of equivalence either. With
+    flagged successes counted as failures, `noise` is 17/30 against 30/30.
+  - Its stop is a request just under the judge's limit: the largest request of each success's
+    last second was 0.003–0.005 m/s (exploratory).
+- **From out-of-distribution poses, BC is worse:** 16/30 against 27/30 in `wide` (11 / 0,
+  p = 0.001 per slot; the 11 pairs come from 5 of the 10 poses).
+- **Lens.**
+  - Trained at 80°, BC stops short under the robot's lens (0.349 m; 0/30).
+  - Trained through that lens, it no longer stops short (zone reached 30/30) and scores 23/30
+    (against `bc_v4`: b / c = 0 / 23, p = 2.4e-7). That is still below the servo's 30/30
+    (7 / 0, p = 0.016; all 7 on poses 1, 5 and 7).
+  - The two BC arms ran in different sessions and trained on 32 and 30 episodes.
+- **Timing.**
+  - Policy inference was 2–3 times slower than in v3 (p50 60–69 ms, p99 116–123 ms), for
+    reasons not investigated. Consistent with that, 37 of 130 policy trials had a fallback zero
+    in their last second, and 21 BC successes are flagged stale.
+  - Counted as failures, they would leave `bc_v4` at 17/30 in `noise` and `bc_v4_62` at 16/30.
+  - An exploratory check made after seeing the data found that in all 21, the policy's own
+    requests already met the still rule. Its scripts are in
+    [results/sim_eval_v4_cleanstop/exploratory](results/sim_eval_v4_cleanstop/exploratory/);
+    the bags they read are not in git.
+
+What it does not show (details in the write-up):
+
+- Anything about the real robot.
+- Independent trials: the 3 rounds of a pose are correlated, so the CIs are too narrow and the
+  p values too small, and no correction is applied across the 6 tests.
+- Same-session pairs or controlled load for the `bc_v4_62` comparisons: that arm ran in a
+  session of its own, and timing was not controlled.
+- Training variance: there is one training seed per model.
+- A like-for-like comparison with the tables above: v4 counts a request as still only at
+  |v| ≤ 0.005 m/s and the servo latches its stop; the clean run, v2 and v3 used 0.02 m/s and no
+  latch.
 
 ## Tests
 
@@ -484,7 +558,8 @@ Last run (October 2026):
   simulation run is a pipeline check with honest numbers, not a learning result. The harder
   simulation evaluation (v2: randomisation on, out-of-distribution poses, the 62.2° lens) is in
   the results above. It does not cover out-of-distribution lighting or actuation latency.
-- **No BC model here reliably commands a stop inside the docking band.**
+- **Before v4, no BC model here reliably commanded a stop inside the docking band; v4's gets its
+  request just under the 0.005 m/s threshold, not to zero.**
   - BC v1's demonstrations were recorded with the earlier, odometry-only judge and hold no
     stop examples.
   - The v3 re-recording, under the judge that also checks the request, still ends mostly on
@@ -493,8 +568,11 @@ Last run (October 2026):
   - BC v2 and the stop-weighted BC therefore pass the judge by creeping. Under the 62.2° lens
     they stop short of the band (results/sim_eval_v3_bcfix).
   - Demonstrations that end on a commanded stop need a stricter demo-ending rule or a servo
-    with hysteresis on its stop range. The v4 protocol adds both; it is pre-registered and has
-    not been run yet.
+    with hysteresis on its stop range. The v4 protocol adds both (results/sim_eval_v4_cleanstop,
+    simulation only). BC trained on its demonstrations requests less than 0.005 m/s at the end
+    of 36 of 40 in-distribution trials, but a few mm/s or less, not zero.
+  - From out-of-distribution poses it succeeds in 16/30 (the servo: 27/30), and under a lens it
+    was not trained on it stops short (0/30).
 - **Recorded actions are requests, not motion.** `action` is `/cmd_vel_in`, before the gate
   scales or blocks it near the box. The bags also hold `/cmd_vel` and the gate status, but the
   dataset does not use them yet.

@@ -1,0 +1,21 @@
+stage: demos (2026-10-29T12:28:57Z)
+commit: b72ba83e9a553df3e72d81ef5a3f0c11e8a376db
+dirty: 0 paths outside results/, 0 tracked under results/
+camera hfov_rad: 1.396 (fake_robot camera_hfov_rad, dock_judge and servo_baseline hfov_rad)
+SIM_CPUSET: 0-2
+loadavg at start: 2.20 1.91 2.03 7/144 24797
+launch demos_r1, as the nodes report it:
+  dock_judge.request_still_v: 0.005
+  dock_judge.hfov_rad: 1.396
+  fake_robot.camera_hfov_rad: 1.396
+  servo_baseline.stop_hysteresis: 0.03
+  servo_baseline.hfov_rad: 1.396
+loadavg after demos_r1: 3.73 2.86 2.46 5/176 10906
+launch demos_r2, as the nodes report it:
+  dock_judge.request_still_v: 0.005
+  dock_judge.hfov_rad: 1.396
+  fake_robot.camera_hfov_rad: 1.396
+  servo_baseline.stop_hysteresis: 0.03
+  servo_baseline.hfov_rad: 1.396
+loadavg after demos_r2: 5.24 4.75 3.54 2/155 5090
+loadavg at end: 5.24 4.75 3.54 2/155 5091 (2026-10-29T12:45:15Z)

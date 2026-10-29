@@ -1,0 +1,44 @@
+condition: hfov62
+arms: bc_v4_62
+fake_robot: randomize true, seed 203, start poses config/start_poses.yaml, camera_hfov_rad 1.0856
+dock_judge, servo_baseline: hfov_rad 1.0856
+schedule: tools/make_schedule.py --methods bc_v4_62 --poses 10 --rounds 3 --seed 2026 (interleaved)
+report: 2026-10-29T16:19:43Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: ea29531c146345340a663122cd9803b754b57c5f9812c98752558a8cdcbb0632 (sim_work/v4_62/runs/bc/policy.onnx)
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T160631Z (2026-10-29T16:06:31Z)
+commit: b72ba83e9a553df3e72d81ef5a3f0c11e8a376db
+dirty: 0 paths outside results/, 0 tracked under results/
+SIM_CPUSET: 0-2
+loadavg at start: 1.27 3.27 4.52 1/156 25521
+nodes report:
+  dock_judge.request_still_v: 0.005
+  dock_judge.hfov_rad: 1.0856
+  fake_robot.camera_hfov_rad: 1.0856
+loadavg at end: 7.94 7.39 6.25 1/150 32056 (2026-10-29T16:19:34Z)
+
+== earlier1: rows of sim_work/v4/eval_v2/jazzy/hfov62 (an earlier session; its own noise draws) ==
+condition: hfov62
+arms: servo,bc_v4
+fake_robot: randomize true, seed 203, start poses config/start_poses.yaml, camera_hfov_rad 1.0856
+dock_judge, servo_baseline: hfov_rad 1.0856
+schedule: tools/make_schedule.py --methods servo,bc_v4 --poses 10 --rounds 3 --seed 2026 (interleaved)
+report: 2026-10-29T16:03:45Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: ed36c9b606586622a3f4f4a627d3652efa48fd9c11bc5ba077394b23558eff2e (sim_work/v4/runs/bc/policy.onnx)
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T153545Z (2026-10-29T15:35:45Z)
+commit: b72ba83e9a553df3e72d81ef5a3f0c11e8a376db
+dirty: 0 paths outside results/, 0 tracked under results/
+SIM_CPUSET: 0-2
+loadavg at start: 5.03 5.20 4.97 1/149 6364
+nodes report:
+  dock_judge.request_still_v: 0.005
+  dock_judge.hfov_rad: 1.0856
+  fake_robot.camera_hfov_rad: 1.0856
+  servo_baseline.stop_hysteresis: 0.03
+  servo_baseline.hfov_rad: 1.0856
+loadavg at end: 4.60 5.43 5.37 1/150 20406 (2026-10-29T16:03:12Z)

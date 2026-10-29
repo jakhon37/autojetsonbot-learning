@@ -1,0 +1,22 @@
+condition: noise
+arms: servo,bc_v4
+fake_robot: randomize true, seed 201, start poses config/start_poses.yaml, camera_hfov_rad 1.396
+dock_judge, servo_baseline: hfov_rad 1.396
+schedule: tools/make_schedule.py --methods servo,bc_v4 --poses 10 --rounds 3 --seed 2026 (interleaved)
+report: 2026-10-29T16:03:29Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: ed36c9b606586622a3f4f4a627d3652efa48fd9c11bc5ba077394b23558eff2e (sim_work/v4/runs/bc/policy.onnx)
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T144308Z (2026-10-29T14:43:08Z)
+commit: b72ba83e9a553df3e72d81ef5a3f0c11e8a376db
+dirty: 0 paths outside results/, 0 tracked under results/
+SIM_CPUSET: 0-2
+loadavg at start: 5.07 4.33 3.86 1/145 11938
+nodes report:
+  dock_judge.request_still_v: 0.005
+  dock_judge.hfov_rad: 1.396
+  fake_robot.camera_hfov_rad: 1.396
+  servo_baseline.stop_hysteresis: 0.03
+  servo_baseline.hfov_rad: Node not found
+loadavg at end: 4.76 4.82 4.62 2/148 23447 (2026-10-29T15:06:53Z)

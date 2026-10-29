@@ -1,0 +1,10 @@
+40 episodes, 40 successes; outcomes {'success': 40}
+successes whose request in the last 1 s was a stop (|v| < 0.005): 40/40
+successes with at least one stop request in the last 1 s: 40/40; share of stop requests in the last 1 s, median 1.00
+successes that ended on creep the v2/v3 judge called still (0.005 <= |v| <= 0.02): 0/40 
+successes whose largest requested |v| in the last 1.00 s was exactly 0 (max_v_last1s, unrounded): 40/40
+stop request held at the end: median 1.14 s, min 1.01 s, max 1.24 s
+successes that ended with a request of exactly v = 0 for >= 1 s: 40/40 (held 1.011-1.243 s)
+episodes whose request went from a stop back to moving while in band: 0/40 
+successes: duration median 15.4 s (10.0-29.2); final judge range 0.267-0.276 m (median 0.272)
+v4: 40 successes of 40 scheduled demonstrations, 40 of 40 slots scored

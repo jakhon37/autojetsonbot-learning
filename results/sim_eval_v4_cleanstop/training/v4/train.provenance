@@ -1,0 +1,6 @@
+stage: train (2026-10-29T13:04:50Z)
+commit: b72ba83e9a553df3e72d81ef5a3f0c11e8a376db
+dirty: 0 paths outside results/, 0 tracked under results/
+SIM_CPUSET: n/a (a host stage, not pinned)
+loadavg at start: 0.78 2.35 2.90 1/138 20269
+loadavg at end: 4.74 5.04 4.82 3/145 28731 (2026-10-29T13:49:34Z)

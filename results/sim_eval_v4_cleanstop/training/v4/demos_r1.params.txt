@@ -1,0 +1,5 @@
+dock_judge.request_still_v: 0.005
+dock_judge.hfov_rad: 1.396
+fake_robot.camera_hfov_rad: 1.396
+servo_baseline.stop_hysteresis: 0.03
+servo_baseline.hfov_rad: 1.396
