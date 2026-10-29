@@ -1,0 +1,37 @@
+condition: clean_ref
+arms: bc_v2sw
+fake_robot: randomize false, seed 0, start poses config/start_poses.yaml, camera_hfov_rad 1.396
+dock_judge, servo_baseline: hfov_rad 1.396
+schedule: tools/make_schedule.py --methods bc_v2sw --poses 10 --rounds 1 --seed 2026 (interleaved)
+report: 2026-10-29T07:28:07Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: e018fd406234f879c56fb76bbebafd4e80858b10b23fa979e70bee0cc7ecb42d (sim_work/v2sw/runs/bc/policy.onnx)
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T064447Z (2026-10-29T06:44:47Z)
+commit: 13afb1b204f52c706e2ba0340997eb45ce57bc9d
+dirty: 8 paths
+
+== earlier1: rows of results/sim_eval_v2/clean_ref (an earlier session; its own noise draws) ==
+condition: clean_ref (reference, not part of the v2 runs)
+trials.csv: copied unchanged from results/sim_e2e/jazzy/trials.csv (scripts/sim_e2e.sh servo + bc
+  stages, 29 October 2026; fake_robot randomize false; test poses 0-9; 1 round; servo and bc run
+  in separate launches, not interleaved). Its provenance: results/sim_e2e/jazzy/provenance.txt.
+episodes_gt.csv: python scripts/sim_eval_summary.py episodes --bags sim_work/bags/jazzy/servo
+  sim_work/bags/jazzy/bc --out results/sim_eval_v2/clean_ref/episodes_gt.csv
+policy.onnx sha256: 7cfb1cbb09dc074bec4888d9c604e57544c6dd700c93171615a767f89783bbc7 (same model as v2)
+
+== earlier2: rows of sim_work/v2/eval_v2/jazzy/clean_ref (an earlier session; its own noise draws) ==
+condition: clean_ref
+arms: bc_v2
+fake_robot: randomize false, seed 0, start poses config/start_poses.yaml, camera_hfov_rad 1.396
+dock_judge, servo_baseline: hfov_rad 1.396
+schedule: tools/make_schedule.py --methods bc_v2 --poses 10 --rounds 1 --seed 2026 (interleaved)
+report: 2026-10-29T06:42:33Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: f6e0b7540b05d0721a847c0285393606ce045d12c1b68ebe871edfb5b77bd180 (sim_work/v2/runs/bc/policy.onnx)
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T055910Z (2026-10-29T05:59:10Z)
+commit: 13afb1b204f52c706e2ba0340997eb45ce57bc9d
+dirty: 8 paths

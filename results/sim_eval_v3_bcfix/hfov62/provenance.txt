@@ -1,0 +1,42 @@
+condition: hfov62
+arms: bc_v2sw
+fake_robot: randomize true, seed 203, start poses config/start_poses.yaml, camera_hfov_rad 1.0856
+dock_judge, servo_baseline: hfov_rad 1.0856
+schedule: tools/make_schedule.py --methods bc_v2sw --poses 10 --rounds 3 --seed 2026 (interleaved)
+report: 2026-10-29T07:28:29Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: e018fd406234f879c56fb76bbebafd4e80858b10b23fa979e70bee0cc7ecb42d (sim_work/v2sw/runs/bc/policy.onnx)
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T071115Z (2026-10-29T07:11:15Z)
+commit: 13afb1b204f52c706e2ba0340997eb45ce57bc9d
+dirty: 9 paths
+
+== earlier1: rows of results/sim_eval_v2/hfov62 (an earlier session; its own noise draws) ==
+condition: hfov62
+fake_robot: randomize true, seed 203, start poses config/start_poses.yaml, camera_hfov_rad 1.0856
+dock_judge, servo_baseline: hfov_rad 1.0856
+schedule: tools/make_schedule.py --methods servo,bc --poses 10 --rounds 3 --seed 2026 (interleaved)
+report: 2026-10-29T03:57:37Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: 7cfb1cbb09dc074bec4888d9c604e57544c6dd700c93171615a767f89783bbc7
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T033129Z (2026-10-29T03:31:29Z)
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 55 paths
+
+== earlier2: rows of sim_work/v2/eval_v2/jazzy/hfov62 (an earlier session; its own noise draws) ==
+condition: hfov62
+arms: bc_v2
+fake_robot: randomize true, seed 203, start poses config/start_poses.yaml, camera_hfov_rad 1.0856
+dock_judge, servo_baseline: hfov_rad 1.0856
+schedule: tools/make_schedule.py --methods bc_v2 --poses 10 --rounds 3 --seed 2026 (interleaved)
+report: 2026-10-29T06:42:52Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: f6e0b7540b05d0721a847c0285393606ce045d12c1b68ebe871edfb5b77bd180 (sim_work/v2/runs/bc/policy.onnx)
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T062539Z (2026-10-29T06:25:39Z)
+commit: 13afb1b204f52c706e2ba0340997eb45ce57bc9d
+dirty: 8 paths

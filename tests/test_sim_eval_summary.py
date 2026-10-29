@@ -98,3 +98,116 @@ def test_table_scores_like_analyze_trials(tmp_path):
     assert "| c | bc | 0/3 | 0–56% | 3 / 0 | 0.25 | — | timeout 3 (+1 aborted, re-run) |" in text
     assert "| c | bc | 2/3 | 21–94% | 1 / 0 | 1 |" in text  # zone reached, paired with servo's 3/3
     assert "missing" not in text
+
+
+def _condition(folder, arms, schedule=True):
+    """A condition folder with trials.csv, episodes_gt.csv and (optionally) schedule.csv.
+
+    arms: {method: [success per pose 0..n-1]}, all in round 1.
+    """
+    folder.mkdir(parents=True)
+    trials, episodes, slots = [], [], []
+    for method, outcomes in arms.items():
+        for pose, ok in enumerate(outcomes):
+            trials.append([method, pose, 1, "success" if ok else "fail", 10.0, 0.27, 2.0, 0, ""])
+            row = {c: "" for c in ses.EPISODE_COLUMNS}
+            row.update(method=method, pose_id=pose, round=1, outcome="success" if ok else "fail", collided=0,
+                       zone_reached=1)
+            episodes.append([row[c] for c in ses.EPISODE_COLUMNS])
+            slots.append([len(slots) + 1, 1, pose + 1, method, pose, "start %s %d 1" % (method, pose)])
+    _write(folder / "trials.csv", ses.analyze_trials.TRIAL_COLUMNS, trials)
+    _write(folder / "episodes_gt.csv", ses.EPISODE_COLUMNS, episodes)
+    if schedule:
+        _write(folder / "schedule.csv", ses.SCHEDULE_COLUMNS, slots)
+
+
+def test_merge_pairs_a_new_arm_with_an_earlier_session(tmp_path):
+    _condition(tmp_path / "v2" / "c", {"servo": [1, 1, 1, 1], "bc": [0, 0, 0, 1]})
+    _condition(tmp_path / "v3" / "c", {"bc_v2": [1, 1, 0, 1]}, schedule=False)
+    out = tmp_path / "res" / "c"
+    assert ses.main(["merge", "--out", str(out), str(tmp_path / "v2" / "c"), str(tmp_path / "v3" / "c")]) == 0
+    with open(out / "trials.csv", newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert [r["method"] for r in rows] == ["servo"] * 4 + ["bc"] * 4 + ["bc_v2"] * 4
+    with open(out / "schedule.csv", newline="") as f:
+        schedule = list(csv.DictReader(f))
+    # the earlier schedule as written, then the slots the session without a schedule ran
+    assert len(schedule) == 12 and schedule[0]["trial"] == "1"
+    assert schedule[-1] == {"trial": "", "round": "1", "block": "", "method": "bc_v2", "pose_id": "3",
+                            "event": "start bc_v2 3 1"}
+    assert len(ses.analyze_trials.read_schedule(out / "schedule.csv")) == 12
+    with open(out / "episodes_gt.csv", newline="") as f:
+        assert len(list(csv.DictReader(f))) == 12
+    table = tmp_path / "t.md"
+    assert ses.main(["table", "--results", str(tmp_path / "res"), "--conditions", "c", "--vs", "bc",
+                     "--out", str(table)]) == 0
+    text = table.read_text()
+    assert "| c | bc_v2 | 3/4 | 30–95% | 1 / 0 | 1 |" in text  # vs servo
+    assert "**Paired with `bc`**" in text
+    assert "| c | bc_v2 vs bc | 4 | 0 / 2 | 0.5 | +50.0 pp" in text
+    assert "bc vs bc" not in text and "servo vs bc" not in text
+    # each pair once: bc_v2 is the last method, so nothing is paired with it
+    assert ses.main(["table", "--results", str(tmp_path / "res"), "--conditions", "c", "--vs", "bc", "--vs",
+                     "bc_v2", "--out", str(table)]) == 0
+    assert "Paired with `bc_v2`" not in table.read_text() and "bc vs bc_v2" not in table.read_text()
+
+
+def test_merge_refuses_a_method_in_two_sessions(tmp_path, capsys):
+    _condition(tmp_path / "a", {"servo": [1], "bc": [0]})
+    _condition(tmp_path / "b", {"bc": [1]})
+    assert ses.main(["merge", "--out", str(tmp_path / "o"), str(tmp_path / "a"), str(tmp_path / "b")]) == 2
+    assert "method 'bc' has trials in both" in capsys.readouterr().err
+    assert not (tmp_path / "o").exists()
+
+
+def test_table_without_vs_pairs_is_unchanged(tmp_path):
+    _condition(tmp_path / "c", {"servo": [1, 1], "bc": [0, 1]})
+    a, b = tmp_path / "a.md", tmp_path / "b.md"
+    assert ses.main(["table", "--results", str(tmp_path), "--conditions", "c", "--out", str(a)]) == 0
+    assert ses.main(["table", "--results", str(tmp_path), "--conditions", "c", "--vs", "bc", "--out", str(b)]) == 0
+    assert a.read_text() == b.read_text()  # only servo and bc: nothing else to pair with bc
+
+
+# ---------------------------------------------------------------------------- scripts/sim_eval.sh
+
+
+def _sim_eval(tmp_path, *args):
+    import subprocess
+
+    return subprocess.run(
+        ["bash", str(REPO / "scripts" / "sim_eval.sh"), "--work", str(tmp_path / "work"), "--results",
+         str(tmp_path / "res"), "--python", sys.executable, *args],
+        capture_output=True, text=True, timeout=120,
+    )
+
+
+def _schedule(tmp_path, cond):
+    with open(tmp_path / "work" / "eval_v2" / "jazzy" / cond / "schedule.csv", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def test_sim_eval_methods_and_clean_ref_schedules(tmp_path):
+    (tmp_path / "work" / "runs" / "bc").mkdir(parents=True)
+    (tmp_path / "work" / "runs" / "bc" / "policy.onnx").write_bytes(b"stand-in")
+    proc = _sim_eval(tmp_path, "--methods", "bc_v2", "--report-only", "clean_ref", "noise")
+    assert proc.returncode == 0, proc.stderr
+    clean, noise = _schedule(tmp_path, "clean_ref"), _schedule(tmp_path, "noise")
+    assert {r["method"] for r in clean + noise} == {"bc_v2"}
+    assert len(clean) == 10 and {r["round"] for r in clean} == {"1"}  # randomisation off: 1 round
+    assert len(noise) == 30
+    # the default arms reproduce the v2 schedule
+    proc = _sim_eval(tmp_path, "--report-only", "noise")
+    assert proc.returncode == 0, proc.stderr
+    with open(REPO / "results" / "sim_eval_v2" / "noise" / "schedule.csv", newline="") as f:
+        assert _schedule(tmp_path, "noise") == list(csv.DictReader(f))
+
+
+def test_sim_eval_rejects_two_policy_arms_and_needs_a_model_only_for_one(tmp_path):
+    proc = _sim_eval(tmp_path, "--methods", "servo,bc,bc_v2", "--report-only", "noise")
+    assert proc.returncode == 1 and "one policy arm per session" in proc.stderr
+    proc = _sim_eval(tmp_path, "--methods", "bc_v2", "--report-only", "noise")
+    assert proc.returncode == 1 and "policy.onnx" in proc.stderr
+    proc = _sim_eval(tmp_path, "--methods", "servo", "--report-only", "noise")
+    assert proc.returncode == 0, proc.stderr
+    proc = _sim_eval(tmp_path, "--pair-with", str(tmp_path / "missing"), "--methods", "servo", "--report-only")
+    assert proc.returncode == 1 and "is not a directory" in proc.stderr

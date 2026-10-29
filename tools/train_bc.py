@@ -15,6 +15,10 @@ preprocess.twist_to_action(v, w), i.e. (v / 0.25 m/s, w / 1.5 rad/s) clipped to 
 Augmentation works on the uint8 frame before that step: colour jitter, a small random
 translation and, with --hflip, a mirror image whose turn rate is negated.
 
+--stop-weight W multiplies the loss of every training frame whose command is a full stop
+(|v| < 0.005 m/s and |w| < 0.05 rad/s) by W; 1 (the default) is the plain mean loss. The
+reported train loss is then the weighted one; validation loss and MAE stay unweighted.
+
 The split is by episode (jbl_episodes.split_episodes), never by frame. Validation MAE is
 reported in m/s and rad/s next to the MAE of always predicting the mean training command, so
 a model that learned nothing is easy to spot.
@@ -58,6 +62,8 @@ IMAGE_KEY = "observation.images.front"
 STATE_KEY = "observation.state"
 ACTION_KEY = "action"
 ACTION_SCALE = np.array([preprocess.V_MAX, preprocess.W_MAX], dtype=np.float32)
+STOP_V, STOP_W = 0.005, 0.05  # m/s, rad/s: a command below both is a full stop (--stop-weight)
+STOP_NORM = np.array([STOP_V, STOP_W], dtype=np.float32) / ACTION_SCALE
 _LUMA = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
 
@@ -317,6 +323,7 @@ def build_policy_meta(
             "lr": args.lr,
             "weight_decay": args.weight_decay,
             "huber_delta": args.huber_delta,
+            "stop_weight": args.stop_weight,
             "schedule": "cosine per step to lr * 0.01",
             "augment": asdict(augment) if augment is not None else None,
         },
@@ -359,6 +366,12 @@ def evaluate(model: BCPolicy, loader: Any, device: torch.device, loss_fn: nn.Mod
     }
 
 
+def frame_weights(target: torch.Tensor, stop_weight: float) -> torch.Tensor:
+    """Loss weight per frame: stop_weight where the normalised target is a full stop, else 1."""
+    stop = (target.abs() < torch.from_numpy(STOP_NORM).to(target.device)).all(dim=1)
+    return torch.where(stop, torch.full_like(target[:, 0], stop_weight), torch.ones_like(target[:, 0]))
+
+
 def pick_device(name: str) -> torch.device:
     if name == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -383,6 +396,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--huber-delta", type=float, default=0.1, help="in normalised action units")
+    parser.add_argument("--stop-weight", type=float, default=1.0,
+                        help="loss weight of full-stop frames (|v| < %g m/s and |w| < %g rad/s); 1 = unweighted"
+                             % (STOP_V, STOP_W))
     parser.add_argument("--pretrained", action="store_true", help="ImageNet ResNet18 weights (downloaded once)")
     parser.add_argument("--use-state", action="store_true",
                         help="also feed normalised odometry (v, w); not exportable to the robot's image-only "
@@ -404,6 +420,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=min(4, os.cpu_count() or 1))
     parser.add_argument("--device", default="auto", help="auto, cpu, cuda, cuda:1, mps")
     args = parser.parse_args(argv)
+    if args.stop_weight <= 0:
+        parser.error("--stop-weight must be positive")
     args.repo_id = args.repo_id or "local/%s" % args.root.resolve().name
     args.outcomes = _csv(args.outcomes)
     args.methods = _csv(args.methods)
@@ -455,6 +473,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     total_steps = max(1, args.epochs * len(train_loader))
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=args.lr * 0.01)
     loss_fn = nn.HuberLoss(delta=args.huber_delta)
+    frame_loss = nn.HuberLoss(delta=args.huber_delta, reduction="none")
     meta = build_policy_meta(args, model_config, train_eps, val_eps, augment)
     print("train: %d episodes / %d frames, val: %d episodes / %d frames, device %s" % (
         len(train_eps), len(train_set), len(val_eps), len(val_loader.dataset) if val_loader else 0, device))
@@ -468,7 +487,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         loss_sum, n = 0.0, 0
         for x, state, target in train_loader:
             x, state, target = x.to(device), state.to(device), target.to(device)
-            loss = loss_fn(model(x, state), target)
+            if args.stop_weight == 1.0:
+                loss = loss_fn(model(x, state), target)
+            else:  # weighted mean of the per-frame losses
+                weight = frame_weights(target, args.stop_weight)
+                loss = (frame_loss(model(x, state), target).mean(dim=1) * weight).sum() / weight.sum()
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)

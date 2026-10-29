@@ -6,14 +6,15 @@
 #
 # Uses the official ros:<distro>-ros-base images (pulled from mirror.gcr.io when Docker Hub
 # rate-limits) and installs only Ubuntu packages (python3-opencv, python3-pytest, numpy).
-# Works behind an HTTPS proxy: set HTTPS_PROXY and, if TLS is re-terminated, CA_BUNDLE.
+# Works behind an HTTPS proxy: set HTTPS_PROXY and, if the proxy re-terminates TLS, point
+# CA_BUNDLE at its CA certificate (it is mounted into the containers and trusted there).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO=$(pwd)
 DISTROS=${*:-foxy humble jazzy}
 PKGS=${PKGS:-}
 REGISTRY=${REGISTRY:-mirror.gcr.io/library}
-CA_BUNDLE=${CA_BUNDLE:-/root/.ccr/ca-bundle.crt}
+CA_BUNDLE=${CA_BUNDLE:-}
 mkdir -p build_logs
 
 run_one() {

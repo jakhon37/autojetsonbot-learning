@@ -31,7 +31,7 @@ set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 REGISTRY=${REGISTRY:-mirror.gcr.io/library}
-CA_BUNDLE=${CA_BUNDLE:-/root/.ccr/ca-bundle.crt}
+CA_BUNDLE=${CA_BUNDLE:-}
 REPO_ID=local/jbl_sim
 TEST_POSES="0 1 2 3 4 5 6 7 8 9"
 DEMO_SPOTS=$(seq -s ' ' 10 29)

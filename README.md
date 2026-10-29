@@ -59,7 +59,7 @@ all three with the same topics.
 | `ros2_ws/src/jbl_nodes` | Python (3.8-compatible) nodes: `camera_node`, `dock_judge`, `servo_baseline`, `policy_runner`, `trial_logger`, `fake_robot`, the `episode` CLI, shared preprocessing, launch files and params |
 | `tools/` | Host tools (Python 3.12, `requirements-tools.txt`): bag → LeRobot conversion, BC training, ONNX export, ACT training wrapper, TensorRT build script, marker generator, trial schedule, analysis and statistics |
 | `docs/` | `INTERFACES.md` (contract), `PROTOCOL.md` (real-robot runbook) |
-| `scripts/` | `docker_test.sh` (build + test on Foxy/Humble/Jazzy), `sim_e2e.sh` (whole pipeline in simulation), `record_robot.sh` (demos on the robot) |
+| `scripts/` | `docker_test.sh` (build + test on Foxy/Humble/Jazzy), `sim_e2e.sh` (whole pipeline in simulation), `sim_eval.sh` + `sim_eval_summary.py` (the harder paired evaluation), `stop_labels.py` (stop examples in demos, datasets and models), `record_robot.sh` (demos on the robot) |
 | `results/sim_e2e/` | Small outputs of the simulation run: trial CSVs, `report.md`, `success.png`, training metrics |
 
 Launch files (`ros2 launch jbl_nodes <file> --show-args` lists every argument):
@@ -84,6 +84,8 @@ Needs Docker and, for training, a Python 3.12 environment with `requirements-too
 bash scripts/sim_e2e.sh servo                                   # servo baseline, 10 poses, ~5 min
 PYTHON=.venv/bin/python bash scripts/sim_e2e.sh                 # everything below, ~50 min on 4 CPU cores
 PYTHON=.venv/bin/python bash scripts/sim_eval.sh                # harder v2 evaluation of the trained model, ~35 min per condition
+PYTHON=.venv/bin/python bash scripts/sim_eval.sh --work sim_work/v2 --results results/sim_eval_v3_bcfix \
+  --methods bc_v2 --pair-with results/sim_eval_v2 clean_ref noise wide hfov62   # one new arm, paired with earlier rows
 ```
 
 `sim_e2e.sh` starts a clean `ros:jazzy-ros-base` container (`--distro foxy|humble` also work),
@@ -158,6 +160,9 @@ EPISODES=$(python -c 'import json; print(json.load(open("runs/bc/split.json"))["
 split by pose_id, validation fraction 0.2, seed 0); `EPISODES=all` trains on everything,
 including failed demos and trial rollouts. `bag_to_lerobot.py` drops each episode's idle start
 (the zero commands before the operator's first one; `--keep-idle-start` keeps them).
+`train_bc.py --stop-weight W` weights full-stop frames (|v| < 0.005 m/s and |w| < 0.05 rad/s)
+W times in the loss. Check how many stop examples a dataset has, and where they are, with
+`scripts/stop_labels.py dataset` before training (results/sim_eval_v3_bcfix shows why).
 
 The dataset is LeRobot v3 at 10 fps: `observation.images.front` (240×320 RGB from the JPEG
 stream), `observation.state` (odometry v, w), `action` (the `/cmd_vel_in` command), plus
@@ -225,11 +230,13 @@ have only run against stand-ins.
 > container on an x86 laptop CPU, not from autoJetsonBot. It shows that the pipeline runs end
 > to end. It says nothing about how either method does on the real robot.
 
-There are two runs. The **clean run** below has randomisation off and 1 round per pose. It is at
+There are three runs. The **clean run** below has randomisation off and 1 round per pose. It is at
 the ceiling for the servo (10/10) and the floor for BC (0/10), so it says nothing about how
 either method degrades. The **harder evaluation (v2)** after it adds randomisation, start poses
 beyond the training distribution and the robot's 62.2° lens, with 10 poses × 3 rounds per
-condition. Its results are in [results/sim_eval_v2](results/sim_eval_v2/SUMMARY.md).
+condition. Its results are in [results/sim_eval_v2](results/sim_eval_v2/SUMMARY.md). **v3**
+re-records the demonstrations under the corrected judge, retrains BC and evaluates it under the
+same conditions: [results/sim_eval_v3_bcfix](results/sim_eval_v3_bcfix/SUMMARY.md).
 
 ### Clean run (pipeline check; at ceiling for the servo, floor for BC)
 
@@ -374,6 +381,48 @@ What v2 shows and does not show:
   - Actuation latency (`fake_robot` has no command delay).
   - Independent trials: 3 rounds of the same pose are correlated, so the CIs are too narrow.
 
+### BC retrained with stop examples (v3)
+
+Run on Jazzy, 29 October 2026; the full write-up is in
+[results/sim_eval_v3_bcfix/SUMMARY.md](results/sim_eval_v3_bcfix/SUMMARY.md).
+
+- **Data.** The 40 demonstrations were re-recorded with v1's recipe (spots, gains, seeds) under
+  the corrected judge. BC was retrained with v1's command (`bc_v2`, sha256 `f6e0b754…`).
+- **Remedy.** One pre-registered remedy was tried: full-stop frames weighted 30× in the loss
+  (`bc_v2sw`, `e018fd40…`).
+- **Pairing.** Each new arm ran bc-only (`sim_eval.sh --methods`) and was paired by pose ×
+  round with the v2 session's servo and BC v1 rows (for `clean_ref`, the clean run's)
+  (`--pair-with`). The randomised conditions share seeds and schedules across sessions, not
+  noise draws.
+
+| Condition | servo | bc (v1) | bc_v2 | bc_v2sw | bc_v2 vs servo, b / c, exact p | bc_v2 vs bc, b / c, exact p | Stop commanded, bc_v2 / bc_v2sw |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| clean_ref | 10/10 | 0/10 | 10/10 | 10/10 | 0 / 0, p = 1 | 0 / 10, p = 0.002 | 0/10 / 0/10 |
+| noise | 27/30 | 3/30 | 30/30 | 30/30 | 0 / 3, p = 0.25 | 0 / 27, p = 1.5e-8 | 1/30 / 1/30 |
+| wide | 25/30 | 1/30 | 25/30 | 22/30 | 3 / 3, p = 1 | 0 / 24, p = 1.2e-7 | 0/30 / 0/30 |
+| hfov62 | 28/30 | 20/30 | 0/30 | 0/30 | 28 / 0, p = 7.5e-9 | 20 / 0, p = 1.9e-6 | 29/30 / 30/30 |
+
+What v3 shows:
+
+- **The corrected judge did not give the data clean stops.** Only 2 of the 40 new
+  demonstrations requested zero for their whole last second. The judge still calls a request of
+  up to 0.02 m/s still, the servo's heading-scaled creep is just below that, and lidar noise
+  toggles its 0.27 m stop. Full-stop labels went from 0.4 % to 3.1 % of frames. On the docked
+  view, 20 % of labels are stops and 80 % creep at ~0.019 m/s.
+- **BC v2 learned the average.** Offline, on held-out docked-view frames labelled a full stop,
+  it predicts 0.013 m/s (BC v1: 0.024).
+- **BC v2 now passes the judge by creeping, not by stopping.** With the 80° lens it requests
+  ~0.017 m/s and commands a stop in 1 of 70 trials. The judge counts that creep as still, so BC
+  v2 matches the servo there.
+- **Under the 62.2° lens, BC v2 stops short.** The marker looks 1.39× larger, so BC v2 stops at
+  ~0.34 m, just outside the band: 0/30, against BC v1's creep-driven 20/30.
+- **The stop weighting changed the offline numbers, not the closed-loop outcome.** It brought
+  the offline stop prediction to 0.004 m/s, but in closed loop the judge's hold completes at
+  ~0.277 m while the request is still 0.012–0.019 m/s, before the stop view is reached.
+- **The headline numbers are a threshold effect.** BC's improvement on the success rule comes
+  from the 0.02 m/s threshold, not from learning to stop. Testing stopping needs demonstrations
+  that end on a commanded stop.
+
 ## Tests
 
 ```bash
@@ -393,7 +442,8 @@ Last run (October 2026):
   last run before the v2 wide-pose check was added, at 242 tests with 0 failures and 6 skips.
   The skipped tests are the ONNX Runtime and TorchScript backend checks; the base images have
   neither package.
-- **Host.** 330 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`.
+- **Host.** 340 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`. The
+  container suites were not re-run for v3: no ROS package changed.
 
 ## Limitations
 
@@ -406,13 +456,16 @@ Last run (October 2026):
   simulation run is a pipeline check with honest numbers, not a learning result. The harder
   simulation evaluation (v2: randomisation on, out-of-distribution poses, the 62.2° lens) is in
   the results above. It does not cover out-of-distribution lighting or actuation latency.
-- **The published BC model was never shown a stop.** Its demonstrations were recorded with the
-  earlier judge, whose "stopped" test looked at odometry only (≤ 0.02 m/s). Inside the gate's
-  slow zone that held while the servo was still asking for 0.02–0.04 m/s, so every
-  demonstration ended before the servo commanded zero and the dataset holds no stop examples.
-  The judge now also requires the request on `/cmd_vel_in` to be still, so demonstrations
-  recorded with it end with at least 1 s of zero command; the model has not been retrained on
-  such demonstrations yet.
+- **No BC model here reliably commands a stop inside the docking band.**
+  - BC v1's demonstrations were recorded with the earlier, odometry-only judge and hold no
+    stop examples.
+  - The v3 re-recording, under the judge that also checks the request, still ends mostly on
+    creep. The judge's 0.02 m/s "still" threshold is above the servo's slowest creep, and lidar
+    noise toggles its stop.
+  - BC v2 and the stop-weighted BC therefore pass the judge by creeping. Under the 62.2° lens
+    they stop short of the band (results/sim_eval_v3_bcfix).
+  - Demonstrations that end on a commanded stop need a stricter demo-ending rule or a servo
+    with hysteresis on its stop range.
 - **Recorded actions are requests, not motion.** `action` is `/cmd_vel_in`, before the gate
   scales or blocks it near the box. The bags also hold `/cmd_vel` and the gate status, but the
   dataset does not use them yet.

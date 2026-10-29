@@ -1,0 +1,10 @@
+train: 32 episodes / 5265 frames, val: 8 episodes / 1280 frames, device cpu
+epoch   1/5  train_loss 0.0049  val_loss 0.0026  val MAE v 0.018 m/s  w 0.054 rad/s  (mean-command baseline v 0.043  w 0.102)  466.9 s
+epoch   2/5  train_loss 0.0013  val_loss 0.0012  val MAE v 0.011 m/s  w 0.036 rad/s  (mean-command baseline v 0.043  w 0.102)  323.9 s
+epoch   3/5  train_loss 0.0009  val_loss 0.0012  val MAE v 0.012 m/s  w 0.030 rad/s  (mean-command baseline v 0.043  w 0.102)  324.7 s
+epoch   4/5  train_loss 0.0008  val_loss 0.0010  val MAE v 0.011 m/s  w 0.027 rad/s  (mean-command baseline v 0.043  w 0.102)  324.0 s
+epoch   5/5  train_loss 0.0007  val_loss 0.0010  val MAE v 0.011 m/s  w 0.025 rad/s  (mean-command baseline v 0.043  w 0.102)  325.0 s
+best epoch 5 -> sim_work/v2sw/runs/bc/model.pt (+ policy_meta.json)
+onnxruntime vs torch: max |diff| 1.94e-07 over 8 random + 32 dataset inputs (tolerance 1e-04)
+wrote sim_work/v2sw/runs/bc/policy.onnx (torchscript exporter, opset 13, onnxruntime CPU p50 11.2 ms) + policy_meta.json
+remedy train exit 0 2026-10-29T05:56:02Z

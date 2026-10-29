@@ -1,0 +1,13 @@
+stage: train bc_v2sw (2026-10-29T05:26:09Z)
+commit: 13afb1b204f52c706e2ba0340997eb45ce57bc9d
+dirty: 8 paths (see train.git_status)
+command: tools/train_bc.py --root sim_work/v2/dataset --repo-id local/jbl_sim --out sim_work/v2sw/runs/bc --overwrite --epochs 5 --batch-size 32 --device cpu --methods servo_demo --outcomes success --split-by pose_id --val-fraction 0.2 --seed 0 --stop-weight 30; then tools/export_onnx.py sim_work/v2sw/runs/bc/model.pt --out sim_work/v2sw/runs/bc/policy.onnx --dataset-root sim_work/v2/dataset --repo-id local/jbl_sim
+changed paths at the start (tools/train_bc.py carried the new --stop-weight option; the rest are evaluation scripts, tests and results):
+   M scripts/sim_eval.sh
+   M scripts/sim_eval_summary.py
+   M tests/test_sim_eval_summary.py
+   M tests/test_train_export.py
+   M tools/train_bc.py
+  ?? results/sim_eval_v3_bcfix/
+  ?? scripts/stop_labels.py
+  ?? tests/test_stop_labels.py

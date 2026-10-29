@@ -1,0 +1,122 @@
+{
+ "root": "sim_work/v2/dataset",
+ "methods": [
+  "servo_demo"
+ ],
+ "outcomes": [
+  "success"
+ ],
+ "stop_v": 0.005,
+ "all": {
+  "episodes": 40,
+  "frames": 6545,
+  "stop_frames": 939,
+  "stop_fraction": 0.1435,
+  "full_stop_frames": 205,
+  "full_stop_fraction": 0.0313,
+  "stop_end": {
+   "frames": 164,
+   "full_stops": 163,
+   "turns": 1
+  },
+  "moving_end": 636,
+  "stop_start": {
+   "frames": 633,
+   "full_stops": 0,
+   "turns": 633
+  },
+  "stop_middle": {
+   "frames": 142,
+   "full_stops": 42,
+   "turns": 100
+  },
+  "moving": 4970,
+  "end_label_v": {
+   "min": 0.0,
+   "median": 0.01836148276925087,
+   "max": 0.02970067411661148
+  },
+  "episodes_with_stop_in_last_2s": 25,
+  "final_stop_run_frames_per_episode": {
+   "min": 0.0,
+   "median": 0.0,
+   "max": 11.0
+  }
+ },
+ "idle_start_trimmed": {
+  "episodes_trimmed": 10,
+  "seconds_total": 2.4
+ },
+ "train": {
+  "episodes": 32,
+  "frames": 5265,
+  "stop_frames": 884,
+  "stop_fraction": 0.1679,
+  "full_stop_frames": 168,
+  "full_stop_fraction": 0.0319,
+  "stop_end": {
+   "frames": 130,
+   "full_stops": 130,
+   "turns": 0
+  },
+  "moving_end": 510,
+  "stop_start": {
+   "frames": 620,
+   "full_stops": 0,
+   "turns": 620
+  },
+  "stop_middle": {
+   "frames": 134,
+   "full_stops": 38,
+   "turns": 96
+  },
+  "moving": 3871,
+  "end_label_v": {
+   "min": 0.0,
+   "median": 0.018312647938728333,
+   "max": 0.02970067411661148
+  },
+  "episodes_with_stop_in_last_2s": 20,
+  "final_stop_run_frames_per_episode": {
+   "min": 0.0,
+   "median": 0.0,
+   "max": 10.0
+  }
+ },
+ "val": {
+  "episodes": 8,
+  "frames": 1280,
+  "stop_frames": 55,
+  "stop_fraction": 0.043,
+  "full_stop_frames": 37,
+  "full_stop_fraction": 0.0289,
+  "stop_end": {
+   "frames": 34,
+   "full_stops": 33,
+   "turns": 1
+  },
+  "moving_end": 126,
+  "stop_start": {
+   "frames": 13,
+   "full_stops": 0,
+   "turns": 13
+  },
+  "stop_middle": {
+   "frames": 8,
+   "full_stops": 4,
+   "turns": 4
+  },
+  "moving": 1099,
+  "end_label_v": {
+   "min": 0.0,
+   "median": 0.018632706254720688,
+   "max": 0.02555505372583866
+  },
+  "episodes_with_stop_in_last_2s": 5,
+  "final_stop_run_frames_per_episode": {
+   "min": 0.0,
+   "median": 1.0,
+   "max": 11.0
+  }
+ }
+}

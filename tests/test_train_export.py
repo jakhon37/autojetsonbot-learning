@@ -167,6 +167,23 @@ def test_state_policy_trains_without_validation_and_is_not_exportable(dataset_ro
         train_bc.main(["--root", str(dataset_root), "--out", str(out), "--epochs", "1"])
 
 
+def test_stop_weight_weights_full_stop_frames(dataset_root, tmp_path):
+    # normalised targets: (0, 0) and v 0.00475 m/s, w 0.0495 rad/s are full stops; a turn in
+    # place (w 0.75 rad/s) and v 0.00525 m/s are not
+    target = torch.tensor([[0.0, 0.0], [0.019, 0.033], [0.0, 0.5], [0.021, 0.0]])
+    assert train_bc.frame_weights(target, 30.0).tolist() == [30.0, 30.0, 1.0, 1.0]
+    out = tmp_path / "bc_stop"
+    rc = train_bc.main(["--root", str(dataset_root), "--repo-id", REPO_ID, "--out", str(out), "--epochs", "1",
+                        "--batch-size", "16", "--num-workers", "0", "--device", "cpu", "--no-augment",
+                        "--val-fraction", "0.25", "--stop-weight", "5"])
+    assert rc == 0
+    meta = json.loads((out / "policy_meta.json").read_text())
+    assert meta["training"]["stop_weight"] == 5.0
+    assert np.isfinite(json.loads((out / "metrics.jsonl").read_text().splitlines()[0])["train_loss"])
+    with pytest.raises(SystemExit):
+        train_bc.main(["--root", str(dataset_root), "--out", str(tmp_path / "x"), "--stop-weight", "0"])
+
+
 # --------------------------------------------------------------------------------------------
 # Export
 
@@ -224,6 +241,40 @@ def test_dynamo_exporter_fallback_path(bc_run, tmp_path):
         assert backend.infer(np.zeros((1, 3, 224, 224), dtype=np.float32)).shape == (1, 2)
     finally:
         backend.close()
+
+
+def test_stop_labels_offline_predictions(exported, bc_run, dataset_root, tmp_path):
+    """scripts/stop_labels.py offline: the deployed model's v on the validation frames, by label."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("stop_labels", TOOLS.parent / "scripts" / "stop_labels.py")
+    stop_labels = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stop_labels)
+    out, frames_csv = tmp_path / "offline.json", tmp_path / "frames.csv"
+    rc = stop_labels.main([
+        "offline", "--root", str(dataset_root), "--repo-id", REPO_ID, "--split", str(bc_run / "split.json"),
+        "--methods", "teleop", "bc", "none", "--outcomes", "success", "fail", "none",
+        "--model", "m=%s" % (exported / "policy.onnx"), "--out", str(out), "--frames-csv", str(frames_csv),
+    ])
+    assert rc == 0
+    result = json.loads(out.read_text())
+    by_label = result["models"]["m"]["by_label"]
+    assert result["frames"] > 0
+    assert by_label["stop_any"]["frames"] + by_label["moving_any"]["frames"] == result["frames"]
+    import pandas as pd
+
+    frames = pd.read_csv(frames_csv)
+    assert len(frames) == result["frames"] and frames["pred_m"].abs().max() <= preprocess.V_MAX
+    # the ONNX prediction is policy_runner's: the same model on the same preprocessed frame
+    val = json.loads((bc_run / "split.json").read_text())["val"]
+    item = train_bc.open_frames(REPO_ID, dataset_root, val)[0]
+    rgb = train_bc.frame_rgb_uint8(item[train_bc.IMAGE_KEY])
+    backend = policy_backends.create_backend("onnxruntime", str(exported / "policy.onnx"))
+    try:
+        v, _ = preprocess.action_to_twist(backend.infer(preprocess.to_model_input(rgb)[None]))
+    finally:
+        backend.close()
+    assert frames.loc[0, "pred_m"] == pytest.approx(v, abs=1e-4)
 
 
 def test_failed_parity_writes_nothing(bc_run, tmp_path):
