@@ -8,8 +8,9 @@
         --model v1=sim_work/runs/bc/policy.onnx --model v2=sim_work/v2/runs/bc/policy.onnx
 
 A frame or command is a *stop* when its requested |v| is below 0.005 m/s (the threshold
-scripts/sim_eval_summary.py uses for "stop commanded"; dock_judge calls a request of up to
-0.02 m/s still). Frames are classed by position in their episode: stop_end and moving_end are
+scripts/sim_eval_summary.py uses for "stop commanded"; from v4 on dock_judge calls a request
+still at |v| <= 0.005 m/s, request_still_v; v2/v3 called up to 0.02 m/s still). Frames are
+classed by position in their episode: stop_end and moving_end are
 the stop and moving frames of the last 2 s (the docked view: the judge's 1 s hold and the
 approach just before it), stop_start is the run of stop frames that begins the episode,
 stop_middle any other stop frame and moving any other moving frame. A stop frame is a *turn*
@@ -17,7 +18,13 @@ when its requested |w| is at least 0.05 rad/s (the servo turning in place to fin
 the marker) and a *full stop* otherwise.
 
 bags     per demonstration in the bags: outcome, duration, the largest requested |v| in the
-         last 1 s before the end and how long the request had been a stop when it ended.
+         last 1.00 s before the end (max_v_last1s, written unrounded, so "exactly 0" can be read
+         from the CSV: P1 of results/sim_eval_v4_cleanstop/PREREG.md; a window without any
+         request gives nan), how long the request had been a stop (stop_for_s) and
+         exactly v = 0 (zero_for_s) when it ended, restarts_in_band: how often the request
+         went from a stop back to moving while the judge said in_band (stop toggling near
+         the box, as lidar noise caused around the v2/v3 servo's 0.27 m stop; the first 0.3 s
+         after the start are skipped), and the judge's last range (final_range_m).
 dataset  stop-label counts of the servo_demo successes (the frames train_bc.py trains on with
          --methods servo_demo --outcomes success), overall and per split.
 offline  each ONNX model's predicted v on the validation frames, by frame class.
@@ -43,7 +50,7 @@ sys.path.insert(0, str(REPO / "ros2_ws" / "src" / "jbl_nodes"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 STOP_V = 0.005  # m/s
-STILL_V = 0.02  # m/s, dock_judge stopped_v
+STILL_V = 0.02  # m/s, what the v2/v3 judge called a still request (dock_judge stopped_v then)
 END_FRAMES = 20  # the last 2 s at the dataset's 10 fps
 TURN_W = 0.05  # rad/s, dock_judge stopped_w
 CLASSES = ("stop_end", "moving_end", "stop_start", "stop_middle", "moving")
@@ -65,22 +72,48 @@ def frame_classes(v: Sequence[float], threshold: float = STOP_V, end_frames: int
     return out
 
 
-def ending(cmd: Sequence[tuple[float, float]], t1: float, threshold: float = STOP_V) -> dict[str, float]:
-    """Requests in the last 1 s before t1 (largest and smallest |v|, share of stops) and how long
-    the request had been a stop when the episode ended."""
-    last1 = [abs(v) for t, v in cmd if t >= t1 - 1.0]
-    since = None
-    for t, v in cmd:
+def ending(cmd: Sequence[tuple[float, ...]], t1: float, threshold: float = STOP_V) -> dict[str, float]:
+    """Requests (t, v[, w]) in the last 1 s before t1 (largest and smallest |v|, share of stops) and
+    how long the request had been a stop (|v| < threshold) and exactly v = 0 when the episode ended."""
+    last1 = [abs(v) for t, v, *_ in cmd if t >= t1 - 1.0]
+    since = zero_since = None
+    for t, v, *_ in cmd:
         if abs(v) >= threshold:
             since = None
         elif since is None:
             since = t
+        if v != 0.0:
+            zero_since = None
+        elif zero_since is None:
+            zero_since = t
     return {
         "max_v_last1s": max(last1) if last1 else float("nan"),
         "min_v_last1s": min(last1) if last1 else float("nan"),
         "stop_share_last1s": sum(v < threshold for v in last1) / len(last1) if last1 else float("nan"),
         "stop_for_s": (t1 - since) if since is not None else 0.0,
+        "zero_for_s": (t1 - zero_since) if zero_since is not None else 0.0,
     }
+
+
+def restarts_in_band(
+    cmd: Sequence[tuple[float, ...]],
+    status: Sequence[tuple[float, dict[str, Any]]],
+    t_from: float = -np.inf,
+    threshold: float = STOP_V,
+) -> int:
+    """How often, from t_from on, the request went from a stop (|v| < threshold) back to moving
+    while the judge's latest status said in_band: 0 for a controller that, once stopped near the
+    box, stays stopped. t_from skips the start, where the judge may still report the last pose."""
+    n, i, in_band, was_stop = 0, 0, False, False
+    for t, v, *_ in cmd:
+        while i < len(status) and status[i][0] <= t:
+            in_band = bool(status[i][1].get("in_band"))
+            i += 1
+        stop = abs(v) < threshold
+        if was_stop and not stop and in_band and t >= t_from:
+            n += 1
+        was_stop = stop
+    return n
 
 
 # ---------------------------------------------------------------------------- bags
@@ -89,16 +122,23 @@ def ending(cmd: Sequence[tuple[float, float]], t1: float, threshold: float = STO
 def cmd_bags(args: argparse.Namespace) -> int:
     import sim_eval_summary as ses
 
-    rows = []
+    rows, zero_for_s = [], []  # zero_for_s unrounded, so the >= 1 s count is exact
     for path in args.bags:
         for ep in ses.read_episodes(path):
             t1 = ep.t1 if ep.t1 is not None else ep.t0
             e = ending(ep.cmd, t1)
+            zero_for_s.append(e["zero_for_s"])
+            # the judge's last range; null (no valid reading) is written as empty, like no status
+            final_range = ep.status[-1][1].get("front_range_m") if ep.status else None
             rows.append({
                 "bag": path.name, "method": ep.method, "pose_id": ep.pose_id, "round": ep.round,
                 "outcome": ep.outcome, "duration_s": "%.3f" % (t1 - ep.t0),
-                "max_v_last1s": "%.4f" % e["max_v_last1s"], "min_v_last1s": "%.4f" % e["min_v_last1s"],
+                # repr round-trips the float exactly: P1 reads "exactly 0" from this column
+                "max_v_last1s": repr(e["max_v_last1s"]), "min_v_last1s": "%.4f" % e["min_v_last1s"],
                 "stop_share_last1s": "%.2f" % e["stop_share_last1s"], "stop_for_s": "%.2f" % e["stop_for_s"],
+                "zero_for_s": "%.3f" % e["zero_for_s"],
+                "restarts_in_band": restarts_in_band(ep.cmd, ep.status, ep.t0 + ses.TELEPORT_SETTLE_S),
+                "final_range_m": "" if final_range is None else final_range,
             })
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -116,13 +156,28 @@ def cmd_bags(args: argparse.Namespace) -> int:
     print("successes with at least one stop request in the last 1 s: %d/%d; share of stop requests in the "
           "last 1 s, median %.2f" % (len(some), len(ok), statistics.median(float(r["stop_share_last1s"]) for r in ok)
                                      if ok else float("nan")))
-    print("successes that ended on creep the judge counts as still (%.3f <= |v| <= %.2f): %d/%d %s" % (
-        STOP_V, STILL_V, len(creep), len(ok), ", ".join("%s/%s:%s" % (r["pose_id"], r["round"], r["max_v_last1s"])
-                                                         for r in creep)))
+    print("successes that ended on creep the v2/v3 judge called still (%.3f <= |v| <= %.2f): %d/%d %s" % (
+        STOP_V, STILL_V, len(creep), len(ok), ", ".join("%s/%s:%.4f" % (r["pose_id"], r["round"],
+                                                                        float(r["max_v_last1s"])) for r in creep)))
+    print("successes whose largest requested |v| in the last 1.00 s was exactly 0 (max_v_last1s, unrounded): "
+          "%d/%d" % (sum(1 for r in ok if float(r["max_v_last1s"]) == 0.0), len(ok)))
     if ok:
         stops = [float(r["stop_for_s"]) for r in ok]
         print("stop request held at the end: median %.2f s, min %.2f s, max %.2f s" % (
             statistics.median(stops), min(stops), max(stops)))
+        zeros = [z for z, r in zip(zero_for_s, rows) if r["outcome"] == "success"]
+        print("successes that ended with a request of exactly v = 0 for >= 1 s: %d/%d (held %.3f-%.3f s)" % (
+            sum(z >= 1.0 for z in zeros), len(ok), min(zeros), max(zeros)))
+    restarts = [r for r in rows if r["restarts_in_band"]]
+    print("episodes whose request went from a stop back to moving while in band: %d/%d %s" % (
+        len(restarts), len(rows), ", ".join("%s/%s:%d" % (r["pose_id"], r["round"], r["restarts_in_band"])
+                                            for r in restarts)))
+    durations = [float(r["duration_s"]) for r in ok]
+    ranges = [float(r["final_range_m"]) for r in ok if r["final_range_m"] != ""]
+    if ok:
+        print("successes: duration median %.1f s (%.1f-%.1f); final judge range %s" % (
+            statistics.median(durations), min(durations), max(durations),
+            "%.3f-%.3f m (median %.3f)" % (min(ranges), max(ranges), statistics.median(ranges)) if ranges else "n/a"))
     return 0
 
 

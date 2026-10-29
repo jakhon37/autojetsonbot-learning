@@ -6,6 +6,16 @@ centre, stop in the band once aligned, rotate in place to search when the marker
 view. When the lidar has no valid front reading (e.g. closer than its 0.15 m minimum range),
 the range is estimated from the marker's apparent size instead.
 
+Stop latch (judge_logic.update_stop_latch): forward motion stops, with v exactly 0, once the
+range estimate is at or below target_range + range_tol, and resumes only once it is above
+target_range + range_tol + stop_hysteresis, so lidar noise around the stop range cannot toggle
+the stop (v2/v3, where stop_hysteresis was in effect 0). While latched, w still centres the
+marker, and the search still rotates in place. The latch is updated on every tick that sees
+the marker, with the same range estimate the law gets (lidar, else marker size); an estimate
+from a scan or frame that arrived before the current episode started shows the previous pose
+and counts as unknown (the state is kept). It is reset (off) at every episode start, and
+each change is logged (throttled).
+
 Subscribes
     image_topic       CompressedImage if the name ends in "/compressed", else Image; best
                       effort, depth 1; the newest frame is decoded once, on the next tick
@@ -27,7 +37,7 @@ Parameters (defaults)
     forward_angle 0.0     sector_half_angle 0.17
     target_range 0.25     range_tol 0.02      k_v 1.0       k_w 1.2
     v_max 0.15            w_max 0.8           search_w 0.5
-    slow_bearing_deg 25.0 bearing_deadband_deg 4.0
+    slow_bearing_deg 25.0 bearing_deadband_deg 4.0  stop_hysteresis 0.03
     marker_side_m 0.10    camera_ahead_of_lidar_m 0.033
     image_timeout_s 0.5   scan_timeout_s 0.5  marker_lost_s 0.3
 """
@@ -53,6 +63,7 @@ from jbl_nodes.judge_logic import (
     front_range,
     range_from_marker_area,
     servo_command,
+    update_stop_latch,
     validate_servo_params,
 )
 
@@ -82,6 +93,7 @@ class ServoBaseline(Node):
             search_w=float(p("search_w", 0.5).value),
             slow_bearing_deg=float(p("slow_bearing_deg", 25.0).value),
             bearing_deadband_deg=float(p("bearing_deadband_deg", 4.0).value),
+            stop_hysteresis=float(p("stop_hysteresis", 0.03).value),
         )
         self._marker_side = float(p("marker_side_m", 0.10).value)
         self._camera_ahead = float(p("camera_ahead_of_lidar_m", 0.033).value)
@@ -98,22 +110,31 @@ class ServoBaseline(Node):
         self._image_pending = False
         self._range = Stamped()
         self._marker: Optional[MarkerObservation] = None  # from the newest decoded frame
+        self._marker_t_ns: Optional[int] = None  # arrival time of that frame
         self._frame_size: Tuple[int, int] = (640, 480)
         self._last_seen_ns: Optional[int] = None
         self._search_sign = 1.0  # turn left first, then towards where the marker was last seen
         self._marker_visible: Optional[bool] = None  # for logging transitions only
+        self._stop_latched = False  # update_stop_latch; off at every episode start
+        self._started_ns = self._now_ns()  # the current episode's start (always_on: node start)
 
         self._decode = image_subscription(self, image_topic, self._on_image)
         self.create_subscription(LaserScan, SCAN_TOPIC, self._on_scan, qos_profile_sensor_data)
         self.create_subscription(String, EVENT_TOPIC, self._on_event, event_qos())
         self._cmd_pub = self.create_publisher(Twist, CMD_TOPIC, 10)
         self.create_timer(1.0 / rate_hz, self._tick)
+        stop_at = self._params.target_range + self._params.range_tol
         self.get_logger().info(
-            "servo on marker %d from %s at %.0f Hz, %s"
+            "servo on marker %d from %s at %.0f Hz, hfov %.4f rad, stops at range <= %.3f m and "
+            "drives again only above %.3f m (stop_hysteresis %.3f m), %s"
             % (
                 marker_id,
                 image_topic,
                 rate_hz,
+                self._hfov,
+                stop_at,
+                stop_at + self._params.stop_hysteresis,
+                self._params.stop_hysteresis,
                 "always on" if self._always_on else "waiting for 'start %s ...'" % self._method,
             )
         )
@@ -151,6 +172,8 @@ class ServoBaseline(Node):
             self._marker = None
             self._last_seen_ns = None
             self._search_sign = 1.0
+            self._stop_latched = False
+            self._started_ns = self._now_ns()
             return
         if self._enabled:
             self._enabled = False
@@ -173,8 +196,15 @@ class ServoBaseline(Node):
             self._update_marker(now_ns)
         if self._marker is not None:
             lidar = self._range.fresh(now_ns, self._scan_timeout_ns)
-            range_m = lidar if lidar is not None else self._range_from_marker()
-            v, w = servo_command(self._marker.bearing_deg, range_m, self._params)
+            if lidar is not None:
+                range_m, arrived_ns = lidar, self._range.t_ns
+            else:
+                range_m, arrived_ns = self._range_from_marker(), self._marker_t_ns
+            # Data from before the start shows the previous episode's pose (the robot was
+            # teleported since): it must not undo the reset.
+            since_start = arrived_ns is not None and arrived_ns >= self._started_ns
+            self._update_latch(range_m if since_start else None, now_ns)
+            v, w = servo_command(self._marker.bearing_deg, range_m, self._params, latched=self._stop_latched)
         elif self._last_seen_ns is not None and now_ns - self._last_seen_ns < self._marker_lost_ns:
             v, w = 0.0, 0.0
         else:
@@ -182,6 +212,7 @@ class ServoBaseline(Node):
         self._publish(v, w)
 
     def _update_marker(self, now_ns: int) -> None:
+        self._marker_t_ns = self._image.t_ns
         try:
             frame = self._decode(self._image.value)
             self._frame_size = (frame.shape[1], frame.shape[0])
@@ -199,6 +230,22 @@ class ServoBaseline(Node):
                 "marker %s" % ("in view" if visible else "lost"), throttle_duration_sec=1.0
             )
             self._marker_visible = visible
+
+    def _update_latch(self, range_m: Optional[float], now_ns: int) -> None:
+        latched = update_stop_latch(self._stop_latched, range_m, self._params)
+        if latched == self._stop_latched:
+            return
+        self._stop_latched = latched
+        t = (now_ns - self._started_ns) * 1e-9
+        # One throttle per direction, so a release right after a stop is still logged.
+        if latched:
+            self.get_logger().info(
+                "stop latch on at range %.3f m, %.2f s after the start" % (range_m, t), throttle_duration_sec=1.0
+            )
+        else:
+            self.get_logger().info(
+                "stop latch off at range %.3f m, %.2f s after the start" % (range_m, t), throttle_duration_sec=1.0
+            )
 
     def _range_from_marker(self) -> float:
         width, height = self._frame_size

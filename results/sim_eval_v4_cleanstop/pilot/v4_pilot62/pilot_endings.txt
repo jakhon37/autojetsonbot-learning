@@ -1,0 +1,8 @@
+20 episodes, 20 successes; outcomes {'success': 20}
+successes whose request in the last 1 s was a stop (|v| < 0.005): 20/20
+successes with at least one stop request in the last 1 s: 20/20; share of stop requests in the last 1 s, median 1.00
+successes that ended on creep the v2/v3 judge called still (0.005 <= |v| <= 0.02): 0/20 
+stop request held at the end: median 1.16 s, min 1.01 s, max 1.27 s
+successes that ended with a request of exactly v = 0 for >= 1 s: 20/20 (held 1.01-1.27 s)
+episodes whose request went from a stop back to moving while in band: 0/20 
+successes: duration median 14.3 s (9.5-29.9); final judge range 0.268-0.279 m (median 0.271)

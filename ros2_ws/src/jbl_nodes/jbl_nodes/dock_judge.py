@@ -7,8 +7,8 @@ Subscribes
     /scan                   LaserScan (sensor-data QoS) -> front-sector median range
     /odom                   Odometry: twist.linear.x, twist.angular.z decide "stopped"
     /cmd_vel_in             Twist (reliable, like the gate): the controller's request must be
-                            still too for "stopped"; none within cmd_timeout_s counts as still
-                            (the gate then outputs zero)
+                            still too for "stopped" (|v| <= request_still_v, |w| <= stopped_w);
+                            none within cmd_timeout_s counts as still (the gate then outputs zero)
     /safety_gate/status     String JSON: "state" drives the pushed-into-obstacle rule
     /episode/event          reliable + transient_local: "start ..." begins judging, "end ..."
                             stops it, "intervention [...]" fails the running episode
@@ -25,9 +25,14 @@ Parameters (defaults)
     image_topic /camera/image_raw/compressed   marker_id 7       hfov_rad 1.396
     forward_angle 0.0       sector_half_angle 0.17      band_min 0.18     band_max 0.32
     bearing_tol_deg 10.0    hold_s 1.0                  timeout_s 30.0    auto_end true
-    stopped_v 0.02          stopped_w 0.05              obstacle_fail_s 2.0
-    rate_hz 10.0            image_timeout_s 0.5         scan_timeout_s 0.5
-    odom_timeout_s 0.5      gate_timeout_s 1.5          cmd_timeout_s 0.3 (= the gate's)
+    stopped_v 0.02          stopped_w 0.05              request_still_v 0.005
+    obstacle_fail_s 2.0     rate_hz 10.0                image_timeout_s 0.5
+    scan_timeout_s 0.5      odom_timeout_s 0.5          gate_timeout_s 1.5
+    cmd_timeout_s 0.3 (= the gate's)
+
+stopped_v and stopped_w bound the odometry, request_still_v and stopped_w the request. Before
+v4 (results/sim_eval_v2, results/sim_eval_v3_bcfix) the request was held to stopped_v, so a
+controller creeping at up to 0.02 m/s counted as still: request_still_v:=0.02 reproduces that.
 """
 
 import json
@@ -114,6 +119,7 @@ class DockJudgeNode(Node):
             timeout_s=float(p("timeout_s", 30.0).value),
             stopped_v=float(p("stopped_v", 0.02).value),
             stopped_w=float(p("stopped_w", 0.05).value),
+            request_still_v=float(p("request_still_v", 0.005).value),
             obstacle_fail_s=float(p("obstacle_fail_s", 2.0).value),
         )
         hfov_rad = float(p("hfov_rad", 1.396).value)
@@ -152,6 +158,7 @@ class DockJudgeNode(Node):
         self.create_timer(1.0 / rate_hz, self._tick)
         self.get_logger().info(
             "judging marker %d on %s: band [%.2f, %.2f] m, |bearing| <= %.1f deg, hold %.1f s, "
+            "still = odom |v| <= %.3f m/s and request |v| <= %.3f m/s, |w| <= %.3f rad/s, "
             "timeout %.0f s, auto_end %s"
             % (
                 config.marker_id,
@@ -160,6 +167,9 @@ class DockJudgeNode(Node):
                 config.band_max,
                 config.bearing_tol_deg,
                 config.hold_s,
+                config.stopped_v,
+                config.request_still_v,
+                config.stopped_w,
                 config.timeout_s,
                 self._auto_end,
             )

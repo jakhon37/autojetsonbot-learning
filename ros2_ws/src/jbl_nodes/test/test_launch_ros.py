@@ -142,6 +142,10 @@ def test_sim_dock_servo_episode_end_to_end(probe, launches, tmp_path):
     trials, bag = tmp_path / "trials.csv", tmp_path / "bag"
     launch = launches("sim_dock.launch.py", tmp_path / "launch.log", trials_csv=trials, bag=bag)
     assert probe.wait_for_nodes(SIM_NODES), launch.output()
+    double = ParameterType.PARAMETER_DOUBLE
+    # config/sim.yaml: the v4 stop rules (a still request is |v| <= 0.005 m/s; the servo's stop latch)
+    assert _param(probe, "dock_judge", "request_still_v") == (double, 0.005)
+    assert _param(probe, "servo_baseline", "stop_hysteresis") == (double, 0.03)
     time.sleep(2.0)  # the recorder subscribes to new topics on its next poll
 
     # The real CLI: probe, fake_robot, dock_judge, servo_baseline, trial_logger and the recorder.
@@ -243,6 +247,8 @@ def test_robot_record_shares_calibration_with_every_node(probe, launches, tmp_pa
         assert _param(probe, node, "hfov_rad") == (double, 1.085), node
     assert _param(probe, "safety_gate", "sector_half_angle") == (double, 0.35)  # jbl_safety's defaults
     assert _param(probe, "camera_node", "compressed_fps") == (double, 15.0)  # config/robot.yaml
+    assert _param(probe, "dock_judge", "request_still_v") == (double, 0.005)
+    assert _param(probe, "servo_baseline", "stop_hysteresis") == (double, 0.03)
     assert _param(probe, "camera_node", "source")[1] == "test_pattern"  # argument beats the node section
     status = probe.record(String, "/dock_judge/status")
     assert probe.spin_until(lambda: status, 5.0)

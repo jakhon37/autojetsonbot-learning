@@ -86,10 +86,20 @@ and `diffdrive_node` has no command watchdog, so the motor-side timeout must be 
   (bumper 0.094 m ahead of the lidar).
 - **Success** = for `success_hold_s` (1.0 s) continuously: front range in **[0.18, 0.32] m**
   (`in_band`), marker visible with |bearing| ≤ **10°** (`aligned`), and `stopped`: |v| ≤ 0.02 m/s
-  and |w| ≤ 0.05 rad/s from `/odom` **and** the latest `/cmd_vel_in` within the same limits
-  (fresh within 0.3 s, the gate's `cmd_timeout`; no fresh command counts as zero). A robot the
-  gate's slow zone has merely slowed below 0.02 m/s while the controller still asks to drive is
-  not stopped.
+  and |w| ≤ 0.05 rad/s from `/odom` **and** the latest `/cmd_vel_in` with |v| ≤ **0.005 m/s**
+  and |w| ≤ 0.05 rad/s (fresh within 0.3 s, the gate's `cmd_timeout`; no fresh command counts as
+  zero). A robot the gate's slow zone has merely slowed below 0.02 m/s while the controller still
+  asks to drive is not stopped, and neither is a controller that keeps creeping at a few mm/s.
+- **Protocol versions.** The request limit is `dock_judge`'s `request_still_v`: 0.005 m/s from
+  v4 on (`results/sim_eval_v4_cleanstop`). The v2 and v3 simulation results
+  (`results/sim_eval_v2`, `results/sim_eval_v3_bcfix`) were judged with 0.02 m/s, the odometry
+  limit, and their servo had no stop hysteresis. They are reproduced with `request_still_v:=0.02`
+  (`dock_judge`) and `stop_hysteresis:=0.0` (`servo_baseline`), e.g. in `config/sim.yaml`.
+- **The servo baseline's stop** (`servo_baseline`; not part of the rule): forward motion stops,
+  with a request of exactly v = 0, once its range estimate is ≤ `target_range` + `range_tol`
+  (0.27 m), and resumes only above that + `stop_hysteresis` (0.30 m), so lidar noise around
+  0.27 m cannot toggle it. While stopped it still turns to centre the marker; the latch is reset
+  at every episode start.
 - The rule does not check the robot's heading to the box face or its sideways offset: a robot
   that drove straight at the marker from an oblique start passes while still 20–30° off square.
 - **Fail** = 30 s timeout, an operator intervention, or `safety_gate` state `stop_obstacle`
@@ -98,6 +108,16 @@ and `diffdrive_node` has no command watchdog, so the motor-side timeout must be 
   model with HFOV `hfov_rad`: 1.0856 rad on the robot (`config/robot.yaml`, stock Pi Camera v2
   lens; calibrate it, PROTOCOL section 5), 1.396 rad in simulation (`config/sim.yaml`, equal to
   `fake_robot`'s `camera_hfov_rad`).
+
+Stop parameters (`config/sim.yaml` and `config/robot.yaml` set the two marked * explicitly):
+
+| Node | Param | Default | Meaning |
+|---|---|---|---|
+| `dock_judge` | `stopped_v` | 0.02 | m/s; odometry \|v\| at or below counts as stopped |
+| `dock_judge` | `stopped_w` | 0.05 | rad/s; odometry and request \|w\| at or below count as stopped |
+| `dock_judge` | `request_still_v` * | 0.005 | m/s; request (`/cmd_vel_in`) \|v\| at or below counts as still (0.02 before v4) |
+| `servo_baseline` | `target_range`, `range_tol` | 0.25, 0.02 | m; the stop latch engages at range ≤ 0.27 m |
+| `servo_baseline` | `stop_hysteresis` * | 0.03 | m; once stopped, drive again only above 0.27 + 0.03 m (0 before v4) |
 
 ## Dataset (LeRobot v3, written by `tools/bag_to_lerobot.py`)
 
@@ -123,9 +143,13 @@ and `diffdrive_node` has no command watchdog, so the motor-side timeout must be 
 - Output `action`: float32 [1,2] in **normalised** units, mapped to (v, w) with
   v = a0 × 0.25 m/s, w = a1 × 1.5 rad/s, then clipped. Stored in `policy_meta.json` beside the
   ONNX file together with input size, normalisation and dataset stats.
-- `policy_runner` publishes `/cmd_vel_in` at 10 Hz from the latest image; drops stale images
-  (> 0.2 s); backends: `onnxruntime`, `tensorrt` (TensorRT 8.x on Jetson), `torch`, `constant`
-  (for tests).
+- `policy_runner` publishes `/cmd_vel_in` at 10 Hz from the latest image, and one
+  `/policy/latency` message per inference. On a tick whose newest image is missing or older
+  than 0.2 s, or after an inference error, it publishes exactly (0, 0) instead (a fallback
+  zero) and no latency message. A tick that overruns the 100 ms period is followed at once by
+  another (the timer catches up), which is a fallback zero when the newest image is by then
+  older than 0.2 s. Backends: `onnxruntime`, `tensorrt` (TensorRT 8.x on Jetson), `torch`,
+  `constant` (for tests).
 
 ## Evaluation protocol (`tools/analyze_trials.py`)
 

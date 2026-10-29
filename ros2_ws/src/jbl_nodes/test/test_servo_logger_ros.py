@@ -162,6 +162,7 @@ class Rig(object):
         self.image_size = image_size
         self.marker_visible = True
         self.camera_on = True
+        self.lidar_on = True
         self.lidar_dead_zone = False  # every forward reading invalid, as when too close
         self.gate_state = "ok"
         self.move = False
@@ -202,7 +203,8 @@ class Rig(object):
         if self.lidar_dead_zone:
             ranges[np.isfinite(ranges)] = 0.0
         scan.ranges = array.array("f", ranges.astype(np.float32).tobytes())
-        self._scan_pub.publish(scan)
+        if self.lidar_on:
+            self._scan_pub.publish(scan)
 
         odom = Odometry()
         odom.header.stamp, odom.header.frame_id = stamp, "odom"
@@ -412,6 +414,32 @@ def test_logger_counts_cli_interventions_and_keeps_their_notes(graph, tmp_path):
     assert rows[1]["notes"] == "intervention cable snagged; no dock_judge status"
 
 
+@pytest.mark.parametrize("params, still", [({}, False), ({"request_still_v": 0.02}, True)])
+def test_judge_counts_a_creeping_request_as_still_only_up_to_request_still_v(graph, params, still):
+    """The robot is still (odometry 0), but the controller keeps asking for 0.01 m/s: not still
+    for the default judge (request_still_v 0.005); request_still_v:=0.02 is the v2/v3 rule."""
+    status = graph.record(String, STATUS_TOPIC)
+    rig = Rig(graph, World.facing_box(0.25))
+    judge(graph, **params)
+    creep = graph.probe.create_publisher(Twist, "/cmd_vel_in", 10)
+
+    def feed():
+        rig.feed()
+        msg = Twist()
+        msg.linear.x = 0.01
+        creep.publish(msg)
+
+    def docked():
+        s = statuses(status[-1:])
+        return bool(s) and s[0]["marker_visible"] and s[0]["in_band"] and s[0]["aligned"]
+
+    assert graph.spin_until(docked, timeout=8.0, every=feed), statuses(status[-1:])
+    graph.spin_for(1.5, every=feed)
+    last = statuses(status[-5:])
+    assert all(s["stopped"] == still and s["speed_v"] == 0.0 for s in last), last
+    assert last[-1]["success"] == still
+
+
 # ---------------------------------------------------------------- servo_baseline
 
 
@@ -474,6 +502,83 @@ def test_servo_runs_only_in_its_episodes_and_follows_the_law(graph):
     n = len(rig.cmds)
     graph.spin_for(0.5, every=rig.feed)
     assert len(rig.cmds) == n, "silent after the episode"
+
+
+@pytest.mark.parametrize("hysteresis", [None, 0.0])
+def test_servo_stop_latch_and_its_reset_at_each_start(graph, hysteresis):
+    """Stopped at 0.26 m, the servo (stop_hysteresis 0.03 by default) stays stopped, v exactly 0,
+    when pushed back to 0.29 m and drives again above 0.30 m; stop_hysteresis 0 is the v2/v3
+    law, which creeps at 0.29 m. Each episode starts unlatched, and a scan from before the
+    start (the previous pose) does not latch it again."""
+    params = {} if hysteresis is None else {"stop_hysteresis": hysteresis}
+    rig = Rig(graph, World.facing_box(0.26), image_topic=RAW_TEST_TOPIC, image_size=(320, 240))
+    servo(graph, image_topic=RAW_TEST_TOPIC, **params)
+    graph.spin_for(0.5, every=rig.feed)
+    rig.event("start servo 1 1")
+    assert graph.spin_until(lambda: len(rig.cmds) >= 5, timeout=3.0, every=rig.feed)
+    graph.spin_for(0.3, every=rig.feed)
+    assert vw(rig.cmds[-1]) == (0.0, 0.0), "stopped at 0.26 m"
+
+    creep = SERVO.k_v * (0.29 - SERVO.target_range)
+    rig.world = World.facing_box(0.29)  # pushed back into the hysteresis band
+    n = len(rig.cmds)
+    graph.spin_for(0.6, every=rig.feed)
+    if hysteresis is None:
+        assert len(rig.cmds) - n >= 8 and all(vw(c) == (0.0, 0.0) for c in rig.cmds[n:]), "latched"
+    else:
+        assert vw(rig.cmds[-1])[0] == pytest.approx(creep, rel=0.1), "v2/v3 law: creeps on"
+    rig.world = World.facing_box(0.31)  # beyond the release range
+    beyond = SERVO.k_v * (0.31 - SERVO.target_range)
+    assert graph.spin_until(lambda: vw(rig.cmds[-1])[0] == pytest.approx(beyond, rel=0.1), 2.0, rig.feed)
+
+    # Stopped at 0.26 m again; the next episode starts at 0.29 m. Until the lidar's next scan the
+    # servo still has the old pose's scan (0.26 m, received before the start): it must not latch.
+    rig.world = World.facing_box(0.26)
+    assert graph.spin_until(lambda: vw(rig.cmds[-1]) == (0.0, 0.0), timeout=2.0, every=rig.feed)
+    graph.spin_for(0.3, every=rig.feed)
+    rig.lidar_on = False
+    rig.world = World.facing_box(0.29)
+    graph.spin_for(0.1)  # what was sent arrives before the start
+    rig.event("start servo 2 1")
+    graph.spin_for(0.25, every=rig.feed)  # frames of the new pose, the old scan (< scan_timeout_s)
+    rig.lidar_on = True
+    assert graph.spin_until(lambda: vw(rig.cmds[-1])[0] > 0.0, timeout=2.0, every=rig.feed)
+    assert vw(rig.cmds[-1])[0] == pytest.approx(creep, rel=0.1), "a new episode starts unlatched"
+
+
+def test_servo_stop_latch_uses_the_marker_size_when_the_lidar_has_no_reading(graph):
+    """No valid lidar reading: the latch gets the range the law falls back on, the marker-size
+    estimate (about 0.263, 0.294 and 0.336 m at 0.26, 0.29 and 0.33 m in a 320x240 frame). On at
+    0.26 m, held at 0.29 m, off at 0.33 m; a frame received before a start (the previous pose)
+    does not latch the new episode."""
+    rig = Rig(graph, World.facing_box(0.33), image_topic=RAW_TEST_TOPIC, image_size=(320, 240))
+    rig.lidar_dead_zone = True
+    servo(graph, image_topic=RAW_TEST_TOPIC)
+    graph.spin_for(0.3, every=rig.feed)
+    rig.event("start servo 1 1")
+    assert graph.spin_until(lambda: rig.cmds and vw(rig.cmds[-1])[0] > 0.05, timeout=3.0, every=rig.feed)
+    rig.world = World.facing_box(0.26)
+    assert graph.spin_until(lambda: vw(rig.cmds[-1]) == (0.0, 0.0), timeout=2.0, every=rig.feed)
+    rig.world = World.facing_box(0.29)
+    n = len(rig.cmds)
+    graph.spin_for(0.6, every=rig.feed)
+    assert len(rig.cmds) - n >= 8 and all(vw(c) == (0.0, 0.0) for c in rig.cmds[n:]), "latched by the marker size"
+    rig.world = World.facing_box(0.33)
+    assert graph.spin_until(lambda: vw(rig.cmds[-1])[0] > 0.05, timeout=2.0, every=rig.feed), "released"
+
+    # Latched at 0.26 m, then the episode ends: the servo stops decoding, so the newest 0.26 m frame
+    # is still pending when the next episode starts at 0.29 m.
+    rig.world = World.facing_box(0.26)
+    assert graph.spin_until(lambda: vw(rig.cmds[-1]) == (0.0, 0.0), timeout=2.0, every=rig.feed)
+    rig.event("end success")
+    graph.spin_for(0.3, every=rig.feed)
+    rig.world = World.facing_box(0.29)
+    graph.spin_for(0.05)  # what was sent arrives before the start
+    rig.event("start servo 2 1")
+    graph.spin_for(0.15)  # no new frame: the first ticks decode the pending 0.26 m frame
+    assert graph.spin_until(lambda: vw(rig.cmds[-1])[0] > 0.0, timeout=2.0, every=rig.feed)
+    creep = SERVO.k_v * (0.294 - SERVO.target_range)
+    assert vw(rig.cmds[-1])[0] == pytest.approx(creep, abs=0.01), "a new episode starts unlatched"
 
 
 def test_servo_always_on(graph):

@@ -418,9 +418,10 @@ prints the CSV path.
 
 **Success**: for 1.0 s continuously, lidar front range in [0.18, 0.32] m, marker id 7 visible
 with |bearing| ≤ 10°, and stopped: |v| ≤ 0.02 m/s and |w| ≤ 0.05 rad/s from `/odom` **and** the
-latest `/cmd_vel_in` (fresh within 0.3 s; none counts as zero) within the same limits, so a
-method still asking to drive is not stopped even where the gate's slow zone holds it back. The
-rule does not measure the robot's heading to the box face or its sideways offset.
+latest `/cmd_vel_in` (fresh within 0.3 s; none counts as zero) with |v| ≤ 0.005 m/s
+(`request_still_v`) and |w| ≤ 0.05 rad/s, so a method still asking to drive, even at a crawl
+the gate's slow zone holds back, is not stopped. The rule does not measure the robot's heading
+to the box face or its sideways offset.
 **Fail**: 30 s without success, any operator intervention, or the safety gate in
 `stop_obstacle` for more than 2 s while the marker is not aligned. The operator never overrules
 the judge; a disagreement goes into the notes and the report.

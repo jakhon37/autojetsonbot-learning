@@ -26,7 +26,14 @@
 #   --demo-rounds N   demonstration rounds over the 20 training spots, 1-3 (default 2)
 #   --epochs N        BC epochs (default 5, about 4-5 min each on 4 CPU cores)
 #   --domain-id N     ROS_DOMAIN_ID inside the container (default 23)
-# Environment: HTTPS_PROXY and CA_BUNDLE as in scripts/docker_test.sh.
+#   --hfov RAD        camera HFOV of the recorded stages (servo, demos, bc), given to fake_robot
+#                     (camera_hfov_rad) and to dock_judge and servo_baseline (hfov_rad); default
+#                     1.396, the simulator's 80 deg lens; 1.0856 is the robot's Pi Camera v2
+# Environment: HTTPS_PROXY and CA_BUNDLE as in scripts/docker_test.sh; SIM_CPUSET (e.g. 0-2)
+# pins the simulation container to those cores (docker run --cpuset-cpus; empty = not pinned).
+# Each stage's $WORK/logs/<distro>/<stage>.provenance records the commit, the paths that differ
+# from it (outside results/, and tracked under results/), the lens, SIM_CPUSET (the container
+# stages), /proc/loadavg at its start and end, and the stop rules and lens the running nodes report.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -36,9 +43,17 @@ REPO_ID=local/jbl_sim
 TEST_POSES="0 1 2 3 4 5 6 7 8 9"
 DEMO_SPOTS=$(seq -s ' ' 10 29)
 EPISODE_TIMEOUT_S=45  # dock_judge ends every episode by 30 s; the margin covers start-up
+SIM_HFOV=1.396  # fake_robot's lens (config/sim.yaml); the robot's Pi Camera v2 is 1.0856
 
 log() { printf '\n[sim_e2e %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { printf '[sim_e2e] error: %s\n' "$*" >&2; exit 1; }
+# Paths that differ from the commit, for the provenance: outside results/ (code, configs, docs;
+# untracked files included) and tracked files under results/. A run's own new result files are
+# untracked under results/ and not counted, so both stay 0 while the code is the commit's.
+dirty_line() {
+  echo "dirty: $(git -C "$REPO" status --porcelain -- . ':(exclude)results' 2>/dev/null | wc -l) paths outside" \
+    "results/, $(git -C "$REPO" status --porcelain --untracked-files=no -- results 2>/dev/null | wc -l) tracked under results/"
+}
 
 # ============================================================== inside the container
 
@@ -84,6 +99,19 @@ run_episode() {
   sleep 1  # let the controller's final zero and the gate settle before the next teleport
 }
 
+# node.param ... -> "node.param: value" lines, as the running nodes report them (provenance)
+node_params() {
+  local spec pids=() dir
+  dir=$(mktemp -d)
+  for spec in "$@"; do
+    { ros2 param get --no-daemon --spin-time 2 --hide-type "/${spec%%.*}" "${spec#*.}" > "$dir/$spec" 2>&1 || true; } &
+    pids+=($!)
+  done
+  wait "${pids[@]}" || true
+  for spec in "$@"; do echo "$spec: $(tail -n 1 "$dir/$spec")"; done
+  rm -rf "$dir"
+}
+
 wait_for_nodes() {
   local deadline=$((SECONDS + 60)) missing nodes
   while :; do
@@ -98,11 +126,12 @@ wait_for_nodes() {
   done
 }
 
-# METHOD CONTROLLER ROUNDS POSES CSV BAG LAUNCH_LOG EXPECT [LAUNCH_ARGS] from the environment
-# (docker exec -e on the host side).
+# METHOD CONTROLLER ROUNDS POSES CSV BAG LAUNCH_LOG PARAMS_LOG EXPECT [LAUNCH_ARGS] from the
+# environment (docker exec -e on the host side).
 # shellcheck disable=SC2153
 inner_trials() {
   : "${METHOD:?}" "${CONTROLLER:?}" "${ROUNDS:?}" "${POSES:?}" "${CSV:?}" "${BAG:?}" "${LAUNCH_LOG:?}" "${EXPECT:?}"
+  : "${PARAMS_LOG:?}"
   # shellcheck source=/dev/null
   . "/opt/ros/$ROS_DISTRO/setup.bash"
   # shellcheck source=/dev/null
@@ -119,6 +148,9 @@ inner_trials() {
   local controller_node=servo_baseline
   [ "$CONTROLLER" = policy ] && controller_node=policy_runner
   wait_for_nodes fake_robot safety_gate dock_judge trial_logger "$controller_node"
+  local reported=(dock_judge.request_still_v dock_judge.hfov_rad fake_robot.camera_hfov_rad)
+  [ "$CONTROLLER" = servo ] && reported+=(servo_baseline.stop_hysteresis servo_baseline.hfov_rad)
+  node_params "${reported[@]}" > "$PARAMS_LOG"
   sleep 3  # the recorder subscribes to new topics on its next poll
   local round pose
   for round in $ROUNDS; do
@@ -196,6 +228,7 @@ ROUNDS=1
 DEMO_ROUNDS=2
 EPOCHS=5
 DOMAIN_ID=23
+HFOV=$SIM_HFOV
 STAGES=()
 while [ $# -gt 0 ]; do
   case $1 in
@@ -207,6 +240,7 @@ while [ $# -gt 0 ]; do
     --demo-rounds) DEMO_ROUNDS=$2; shift 2 ;;
     --epochs) EPOCHS=$2; shift 2 ;;
     --domain-id) DOMAIN_ID=$2; shift 2 ;;
+    --hfov) HFOV=$2; shift 2 ;;
     servo|demos|train|bc|report) STAGES+=("$1"); shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument $1 (see --help)" ;;
@@ -215,6 +249,8 @@ done
 [ ${#STAGES[@]} -gt 0 ] || STAGES=(servo demos train bc report)
 case $DISTRO in foxy|humble|jazzy) ;; *) die "--distro must be foxy, humble or jazzy" ;; esac
 [ "$DEMO_ROUNDS" -ge 1 ] && [ "$DEMO_ROUNDS" -le 3 ] || die "--demo-rounds must be 1, 2 or 3"
+# a decimal point, so the parameter files carry a double (Humble and newer reject an int)
+[[ $HFOV =~ ^[0-9]+\.[0-9]+$ ]] || die "--hfov must be radians with a decimal point, e.g. 1.0856"
 mkdir -p "$WORK"
 WORK=$(cd "$WORK" && pwd)
 RESULTS=${RESULTS:-$REPO/results/sim_e2e/$DISTRO}
@@ -224,14 +260,25 @@ LOGS=$WORK/logs/$DISTRO
 MODEL=$WORK/runs/bc/policy.onnx
 mkdir -p "$BAGS" "$TRIALS" "$LOGS" "$WORK/params"
 wants() { local s; for s in "${STAGES[@]}"; do [ "$s" = "$1" ] && return 0; done; return 1; }
-# What a stage ran: the commit and how many paths differed from it (results/ are regenerated
-# from the same tree, so a dirty count means uncommitted code changes too).
+# What a stage ran: the commit and the paths that differ from it (dirty_line), the lens, the CPU
+# pinning and the load at its start; trials() and stage_end() add the rest. The train stage runs
+# on the host: no lens, no pinning.
+PROV=
 provenance() {
+  PROV=$LOGS/$1.provenance
   { echo "stage: $1 ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
     echo "commit: $(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo none)"
-    echo "dirty: $(git -C "$REPO" status --porcelain 2>/dev/null | wc -l) paths"
-  } > "$LOGS/$1.provenance"
+    dirty_line
+    if [ "$1" = train ]; then
+      echo "SIM_CPUSET: n/a (a host stage, not pinned)"
+    else
+      echo "camera hfov_rad: $HFOV (fake_robot camera_hfov_rad, dock_judge and servo_baseline hfov_rad)"
+      echo "SIM_CPUSET: ${SIM_CPUSET:-(not set: container not pinned)}"
+    fi
+    echo "loadavg at start: $(cat /proc/loadavg)"
+  } > "$PROV"
 }
+stage_end() { echo "loadavg at end: $(cat /proc/loadavg) ($(date -u +%Y-%m-%dT%H:%M:%SZ))" >> "$PROV"; }
 rounds_list() { seq -s ' ' 1 "$1"; }
 
 CONTAINER=
@@ -242,6 +289,7 @@ container() {
   [ -n "$CONTAINER" ] && return 0
   local args=(-d --name "jbl_sim_${DISTRO}_$$" -e "ROS_DOMAIN_ID=$DOMAIN_ID" -e PYTHONUNBUFFERED=1
               -v "$REPO:/repo:ro" -v "$WORK:/work")
+  [ -z "${SIM_CPUSET:-}" ] || args+=(--cpuset-cpus "$SIM_CPUSET")
   if [ -n "${HTTPS_PROXY:-}" ]; then
     args+=(--network host -e "HTTPS_PROXY=$HTTPS_PROXY" -e "https_proxy=$HTTPS_PROXY")
   fi
@@ -252,17 +300,29 @@ container() {
 }
 
 # trials <method> <controller> <rounds> <poses> <csv> <bag> [launch args...]  (paths under WORK)
+# The camera HFOV (--hfov) goes to every recorded launch: fake_robot's lens through the params
+# file, the judge's and the servo's through hfov_rad.
 trials() {
   local method=$1 controller=$2 rounds=$3 poses=$4 csv=$5 bag=$6
   shift 6
   container
-  rm -rf "${BAGS:?}/$bag" "$BAGS/${bag}_qos.yaml"
-  log "$method: poses [$poses] x rounds [$rounds] -> trials/$DISTRO/$csv, bags/$DISTRO/$bag"
+  rm -rf "${BAGS:?}/$bag" "$BAGS/${bag}_qos.yaml" "$LOGS/$bag.params.txt"
+  log "$method: poses [$poses] x rounds [$rounds] -> trials/$DISTRO/$csv, bags/$DISTRO/$bag (camera HFOV $HFOV rad)"
   # Subscribers of /episode/event: fake_robot, dock_judge, trial_logger, the controller, the recorder.
   docker exec -e METHOD="$method" -e CONTROLLER="$controller" -e ROUNDS="$rounds" -e POSES="$poses" \
     -e CSV="/work/trials/$DISTRO/$csv" -e BAG="/work/bags/$DISTRO/$bag" -e EXPECT=5 \
-    -e LAUNCH_LOG="/work/logs/$DISTRO/$bag.launch.log" -e LAUNCH_ARGS="$*" \
-    "$CONTAINER" bash /repo/scripts/sim_e2e.sh --inner trials
+    -e LAUNCH_LOG="/work/logs/$DISTRO/$bag.launch.log" -e PARAMS_LOG="/work/logs/$DISTRO/$bag.params.txt" \
+    -e LAUNCH_ARGS="hfov_rad:=$HFOV $*" "$CONTAINER" bash /repo/scripts/sim_e2e.sh --inner trials
+  { echo "launch $bag, as the nodes report it:"
+    sed 's/^/  /' "$LOGS/$bag.params.txt" 2>/dev/null || echo "  (no $bag.params.txt)"
+    echo "loadavg after $bag: $(cat /proc/loadavg)"
+  } >> "$PROV"
+}
+
+# fake_robot's lens for the servo and bc stages (the demos carry it in demo_r<k>.yaml)
+write_lens_params() {
+  printf 'fake_robot:\n  ros__parameters: {camera_hfov_rad: %s}\n' "$HFOV" > "$WORK/params/lens.yaml"
+  echo /work/params/lens.yaml
 }
 
 # Servo gains per demonstration round: the defaults, then slower and faster variants, so the
@@ -276,15 +336,17 @@ write_demo_params() {
     2) gains="k_v: 0.8, k_w: 1.5, v_max: 0.12, w_max: 0.7, search_w: 0.6" ;;
     3) gains="k_v: 1.2, k_w: 1.0, v_max: 0.18, w_max: 0.9, search_w: 0.4" ;;
   esac
-  printf 'servo_baseline:\n  ros__parameters: {%s}\nfake_robot:\n  ros__parameters: {initial_pose_id: 10}\n' \
-    "$gains" > "$path"
+  printf 'servo_baseline:\n  ros__parameters: {%s}\nfake_robot:\n  ros__parameters: {initial_pose_id: 10, camera_hfov_rad: %s}\n' \
+    "$gains" "$HFOV" > "$path"
   echo "/work/params/demo_r$round.yaml"
 }
 
 if wants servo; then
   provenance servo
   rm -f "$TRIALS/trials_servo.csv"
-  trials servo servo "$(rounds_list "$ROUNDS")" "$TEST_POSES" trials_servo.csv servo
+  trials servo servo "$(rounds_list "$ROUNDS")" "$TEST_POSES" trials_servo.csv servo \
+    extra_params_file:="$(write_lens_params)"
+  stage_end
 fi
 
 if wants demos; then
@@ -296,6 +358,7 @@ if wants demos; then
       start_poses_file:=/ws/install/jbl_nodes/share/jbl_nodes/config/sim_demo_poses.yaml \
       randomize:=true seed:="$r" extra_params_file:="$params"
   done
+  stage_end
 fi
 
 if wants train; then
@@ -315,6 +378,7 @@ if wants train; then
   log "export_onnx"
   "$PY" "$REPO/tools/export_onnx.py" "$WORK/runs/bc/model.pt" --out "$MODEL" \
     --dataset-root "$WORK/dataset" --repo-id "$REPO_ID" 2>&1 | tee "$LOGS/export_onnx.log" | tail -n 8
+  stage_end
 fi
 
 if wants bc; then
@@ -325,7 +389,8 @@ if wants bc; then
   docker exec "$CONTAINER" bash /repo/scripts/sim_e2e.sh --inner onnxruntime
   rm -f "$TRIALS/trials_bc.csv"
   trials bc policy "$(rounds_list "$ROUNDS")" "$TEST_POSES" trials_bc.csv bc \
-    model_path:=/work/runs/bc/policy.onnx backend:=onnxruntime
+    model_path:=/work/runs/bc/policy.onnx backend:=onnxruntime extra_params_file:="$(write_lens_params)"
+  stage_end
 fi
 
 if wants report; then

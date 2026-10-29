@@ -1,0 +1,50 @@
+{
+ "root": "pilot_ds/v4_pilot (a scratch dataset of this pilot's demos_r1 bag, deleted)",
+ "methods": [
+  "servo_demo"
+ ],
+ "outcomes": [
+  "success"
+ ],
+ "stop_v": 0.005,
+ "all": {
+  "episodes": 20,
+  "frames": 3099,
+  "stop_frames": 571,
+  "stop_fraction": 0.1843,
+  "full_stop_frames": 224,
+  "full_stop_fraction": 0.0723,
+  "stop_end": {
+   "frames": 221,
+   "full_stops": 221,
+   "turns": 0
+  },
+  "moving_end": 179,
+  "stop_start": {
+   "frames": 245,
+   "full_stops": 0,
+   "turns": 245
+  },
+  "stop_middle": {
+   "frames": 105,
+   "full_stops": 3,
+   "turns": 102
+  },
+  "moving": 2349,
+  "end_label_v": {
+   "min": 0.0,
+   "median": 0.0,
+   "max": 0.030415253713726997
+  },
+  "episodes_with_stop_in_last_2s": 20,
+  "final_stop_run_frames_per_episode": {
+   "min": 10.0,
+   "median": 11.0,
+   "max": 12.0
+  }
+ },
+ "idle_start_trimmed": {
+  "episodes_trimmed": 3,
+  "seconds_total": 0.9
+ }
+}

@@ -35,6 +35,7 @@ RAW_TOPIC = "/camera/image_raw"
 ODOM_TOPIC = "/odom"
 CMD_TOPIC = "/cmd_vel_in"
 EVENT_TOPIC = "/episode/event"
+LATENCY_TOPIC = "/policy/latency"
 
 COMPRESSED_TYPE = "sensor_msgs/msg/CompressedImage"
 RAW_TYPE = "sensor_msgs/msg/Image"
@@ -141,6 +142,9 @@ class BagSpec:
     cmd_start_s: float = 0.0
     camera_stalls: Sequence[Tuple[float, float]] = ()  # [t0, t1) without frames
     cmd_gaps: Sequence[Tuple[float, float]] = ()  # [t0, t1) without commands
+    latency_hz: float = 0.0  # policy_runner's /policy/latency (one per fresh inference); 0 = no topic
+    latency_gaps: Sequence[Tuple[float, float]] = ()  # [t0, t1) without inferences (stale frames)
+    zero_cmds: Sequence[float] = ()  # extra commands of exactly (0, 0) at these times: policy_runner's fallback
     events: Sequence[Tuple[float, str]] = ()
     row_padding: int = 0  # extra bytes per row of raw images (Image.step > width * 3)
     seed: int = 0
@@ -156,6 +160,7 @@ class RecordedBag:
     images: List[Tuple[int, int]] = field(default_factory=list)  # (t_ns, encoded frame index)
     odom: List[Tuple[int, float, float]] = field(default_factory=list)
     cmd: List[Tuple[int, float, float]] = field(default_factory=list)
+    latency: List[int] = field(default_factory=list)  # /policy/latency times
     events: List[Tuple[int, str]] = field(default_factory=list)
     origin_ns: int = 0  # time zero of the spec (command_at / odom_at / events are relative to it)
     start_ns: int = 0  # first message
@@ -164,6 +169,11 @@ class RecordedBag:
     def rel_s(self, t_ns: int) -> float:
         """Seconds since the spec's time zero."""
         return (t_ns - self.origin_ns) / 1e9
+
+
+_LATENCY_JSON = json.dumps(
+    {"preprocess_ms": 3.0, "infer_ms": 25.0, "total_ms": 29.0, "image_age_ms": 40.0, "backend": "onnxruntime"}
+)
 
 
 def _in_any(t: float, windows: Sequence[Tuple[float, float]]) -> bool:
@@ -197,8 +207,17 @@ def _schedule(spec: BagSpec, origin_ns: int) -> RecordedBag:
             t_ns = ns(jittered)
             bag.cmd.append((t_ns,) + command_at(rel(t_ns)))
         t += 1.0 / spec.cmd_hz
+    if spec.zero_cmds:  # no random draws, so the other streams stay as they were
+        bag.cmd = sorted(bag.cmd + [(ns(t_s), 0.0, 0.0) for t_s in spec.zero_cmds])
+    if spec.latency_hz > 0.0:  # its own generator, so the other streams stay as they were
+        lat_rng, t = np.random.default_rng(spec.seed + 1000), 0.0
+        while t < spec.duration_s:
+            jittered = t + 0.002 + float(lat_rng.uniform(0.0, 0.003))  # just after the tick's command
+            if not _in_any(jittered, spec.latency_gaps):
+                bag.latency.append(ns(jittered))
+            t += 1.0 / spec.latency_hz
     bag.events = [(ns(t_s), text) for t_s, text in spec.events]
-    times = [x[0] for x in bag.images + bag.odom + bag.cmd + bag.events]
+    times = [x[0] for x in bag.images + bag.odom + bag.cmd + bag.events] + bag.latency
     bag.start_ns, bag.end_ns = min(times), max(times) + 1
     return bag
 
@@ -336,6 +355,7 @@ def write_bag(spec: BagSpec, out_dir: Path) -> RecordedBag:
            for t, v, w in bag.odom]
         + [(t, 2, CMD_TOPIC, TWIST_TYPE, (lambda v=v, w=w: factory.twist(v, w))) for t, v, w in bag.cmd]
         + [(t, 3, image_topic, image_type, (lambda i=i, t=t: image_msg(i, t))) for t, i in bag.images]
+        + [(t, 4, LATENCY_TOPIC, STRING_TYPE, (lambda: factory.string(_LATENCY_JSON))) for t in bag.latency]
     )
     messages.sort(key=lambda m: (m[0], m[1]))
     storage = StoragePlugin.SQLITE3 if spec.layout == "foxy" else StoragePlugin.MCAP

@@ -403,6 +403,8 @@ def _bag_payloads(bag: Path, topic: str, issues: list[str]) -> list[dict[str, An
     # Foxy bags carry no message definitions; std_msgs/String is the same in every distro.
     with AnyReader([bag], default_typestore=get_typestore(Stores.ROS2_FOXY)) as reader:
         connections = [c for c in reader.connections if c.topic == topic]
+        if not connections:  # not recorded; rosbags would read every topic for an empty list
+            return out
         for connection, _, raw in reader.messages(connections=connections):
             try:
                 payload = _payload(json.loads(reader.deserialize(raw, connection.msgtype).data))

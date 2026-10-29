@@ -1,0 +1,4 @@
+servo_baseline:
+  ros__parameters: {k_v: 1.0, k_w: 1.2, v_max: 0.15, w_max: 0.8, search_w: 0.5}
+fake_robot:
+  ros__parameters: {initial_pose_id: 10, camera_hfov_rad: 1.396}

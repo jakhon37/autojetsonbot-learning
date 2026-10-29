@@ -3,9 +3,10 @@
 - front_range: median lidar range in a sector around the forward direction.
 - DockJudge: the success / fail state machine of docs/INTERFACES.md ("Docking geometry and
   success"), driven by explicit timestamps so it can be tested without a clock.
-- servo_command: the classical baseline's control law, plus the marker-size range estimate it
-  falls back on when the lidar has no valid reading. It lives here, not in servo_baseline,
-  so it can be tested without rclpy; servo_baseline imports it.
+- servo_command: the classical baseline's control law, its stop latch (update_stop_latch) and
+  the marker-size range estimate it falls back on when the lidar has no valid reading. They
+  live here, not in servo_baseline, so they can be tested without rclpy; servo_baseline
+  imports them.
 - is_intervention: recognises the "intervention [note ...]" /episode/event payload.
 
 Python 3.8 compatible; numpy only.
@@ -102,8 +103,11 @@ class JudgeConfig(NamedTuple):
     bearing_tol_deg: float = 10.0
     hold_s: float = 1.0
     timeout_s: float = 30.0
-    stopped_v: float = 0.02  # m/s, |odom v| and |requested v| at or below count as stopped
-    stopped_w: float = 0.05  # rad/s, the same for w
+    stopped_v: float = 0.02  # m/s, |odom v| at or below counts as stopped
+    stopped_w: float = 0.05  # rad/s, |odom w| and |requested w| at or below count as stopped
+    # m/s, |requested v| (/cmd_vel_in) at or below counts as still. v2/v3 used stopped_v (0.02),
+    # which passed a controller still creeping at 0.012-0.019 m/s (results/sim_eval_v3_bcfix).
+    request_still_v: float = 0.005
     obstacle_fail_s: float = 2.0  # gate in stop_obstacle for longer than this, while not aligned
 
 
@@ -117,8 +121,8 @@ def validate_judge_config(cfg: JudgeConfig) -> None:
             "need hold_s >= 0, timeout_s > 0, obstacle_fail_s >= 0, got %s, %s, %s"
             % (cfg.hold_s, cfg.timeout_s, cfg.obstacle_fail_s)
         )
-    if cfg.stopped_v < 0.0 or cfg.stopped_w < 0.0:
-        raise ValueError("stopped_v and stopped_w must be >= 0")
+    if cfg.stopped_v < 0.0 or cfg.stopped_w < 0.0 or cfg.request_still_v < 0.0:
+        raise ValueError("stopped_v, stopped_w and request_still_v must be >= 0")
 
 
 class Verdict(NamedTuple):
@@ -139,8 +143,10 @@ class DockJudge(object):
 
     Within an episode, the first of these to happen decides it (ties go to success):
       success  in_band, aligned and stopped continuously for hold_s; stopped means odometry
-               and the controller's latest fresh request (/cmd_vel_in) are both still, so a
-               robot that only the gate's slow zone has slowed below stopped_v does not count
+               (|v| <= stopped_v, |w| <= stopped_w) and the controller's latest fresh request
+               (/cmd_vel_in: |v| <= request_still_v, |w| <= stopped_w) are both still, so
+               neither a robot that only the gate's slow zone has slowed below stopped_v nor a
+               controller that keeps creeping at a few mm/s counts
       fail     timeout_s since the start
       fail     gate state stop_obstacle for more than obstacle_fail_s while not aligned
       fail     an operator intervention
@@ -229,7 +235,7 @@ class DockJudge(object):
             and w is not None
             and abs(v) <= cfg.stopped_v
             and abs(w) <= cfg.stopped_w
-            and (cmd is None or (abs(cmd[0]) <= cfg.stopped_v and abs(cmd[1]) <= cfg.stopped_w))
+            and (cmd is None or (abs(cmd[0]) <= cfg.request_still_v and abs(cmd[1]) <= cfg.stopped_w))
         )
 
         if self._in_band and self._aligned and self._stopped:
@@ -294,7 +300,7 @@ class DockJudge(object):
 
 class ServoParams(NamedTuple):
     target_range: float = 0.25  # m, lidar front range to stop at
-    range_tol: float = 0.02  # m; at or below target_range + range_tol forward motion stops
+    range_tol: float = 0.02  # m; at or below target_range + range_tol forward motion stops (latch on)
     k_v: float = 1.0  # (m/s) per m of range error
     k_w: float = 1.2  # (rad/s) per rad of bearing
     v_max: float = 0.15  # m/s
@@ -302,15 +308,36 @@ class ServoParams(NamedTuple):
     search_w: float = 0.5  # rad/s, rotation in place while the marker is not visible
     slow_bearing_deg: float = 25.0  # v falls linearly to 0 as |bearing| grows to this
     bearing_deadband_deg: float = 4.0  # no rotation within this; well inside the judge's 10 deg
+    # m; once stopped, forward motion resumes only above target_range + range_tol + this. 0 is
+    # the v2/v3 law, where lidar noise toggled the stop (results/sim_eval_v3_bcfix).
+    stop_hysteresis: float = 0.03
 
 
 def validate_servo_params(p: ServoParams) -> None:
-    if p.target_range <= 0.0 or p.range_tol < 0.0:
-        raise ValueError("need target_range > 0 and range_tol >= 0")
+    if p.target_range <= 0.0 or p.range_tol < 0.0 or p.stop_hysteresis < 0.0:
+        raise ValueError("need target_range > 0, range_tol >= 0 and stop_hysteresis >= 0")
     if min(p.k_v, p.k_w, p.v_max, p.w_max) <= 0.0:
         raise ValueError("k_v, k_w, v_max and w_max must be positive")
     if p.search_w < 0.0 or p.bearing_deadband_deg < 0.0 or p.slow_bearing_deg <= p.bearing_deadband_deg:
         raise ValueError("need search_w >= 0 and 0 <= bearing_deadband_deg < slow_bearing_deg")
+
+
+def update_stop_latch(latched: bool, range_m: Optional[float], params: ServoParams = ServoParams()) -> bool:
+    """The servo's stop latch after one range estimate (None = unknown).
+
+    On once the range is at or below target_range + range_tol; off again only once it is above
+    target_range + range_tol + stop_hysteresis; in between, and while the range is unknown, the
+    state is kept. Start every episode with it off (False). With stop_hysteresis 0 it is on
+    exactly when a known range is at or below target_range + range_tol: the v2/v3 law.
+    """
+    if range_m is None:
+        return latched
+    stop_at = params.target_range + params.range_tol
+    if range_m <= stop_at:
+        return True
+    if range_m > stop_at + params.stop_hysteresis:
+        return False
+    return latched
 
 
 def servo_command(
@@ -318,19 +345,22 @@ def servo_command(
     range_m: Optional[float],
     params: ServoParams = ServoParams(),
     search_sign: float = 1.0,
+    latched: bool = False,
 ) -> Tuple[float, float]:
     """Classical docking law -> (v m/s, w rad/s).
 
     bearing_deg   marker bearing (positive = left of centre), None if the marker is not visible
     range_m       best estimate of the lidar front range, None if unknown
     search_sign   direction to search in when the marker is not visible (+1 = turn left)
+    latched       the stop latch, already updated with the same range_m (update_stop_latch)
 
     Marker visible: w = k_w * bearing (left of centre -> positive yaw, turning towards it),
     zero inside the deadband; v = clip(k_v * (range - target), 0, v_max), scaled by
     (1 - |bearing| / slow_bearing_deg) so the robot turns before it drives, and zero once the
-    range is at or below target + range_tol (never reverses). So (0, 0) needs the range at or
-    below target + range_tol and the bearing inside the deadband, not just anywhere in the
-    judge's band: above target + range_tol it still creeps forward at k_v * (range - target).
+    range is at or below target + range_tol (never reverses). While latched, v is exactly 0
+    whatever the range and only w moves, centring the marker. So (0, 0) needs the stop range
+    reached and the bearing inside the deadband, not just anywhere in the judge's band: above
+    target + range_tol an unlatched servo still creeps forward at k_v * (range - target).
     Marker not visible: rotate in place at search_w.
     """
     p = params
@@ -340,7 +370,7 @@ def servo_command(
         w = 0.0
     else:
         w = min(max(p.k_w * math.radians(bearing_deg), -p.w_max), p.w_max)
-    if range_m is None or range_m <= p.target_range + p.range_tol:
+    if latched or range_m is None or range_m <= p.target_range + p.range_tol:
         v = 0.0
     else:
         heading_scale = max(0.0, 1.0 - abs(bearing_deg) / p.slow_bearing_deg)

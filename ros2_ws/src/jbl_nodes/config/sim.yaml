@@ -22,10 +22,16 @@ dock_judge:
   ros__parameters:
     image_topic: /camera/image_raw/compressed
     auto_end: true
+    # The controller's request (/cmd_vel_in) counts as still only at |v| <= this (m/s). v2/v3
+    # used 0.02, which passed a controller still creeping; set 0.02 to reproduce them.
+    request_still_v: 0.005
 
 servo_baseline:
   ros__parameters:
     image_topic: /camera/image_raw/compressed
+    # Stopped at range <= 0.27 m (target_range + range_tol), drive again only above 0.27 + this
+    # (m), so lidar noise cannot toggle the stop. v2/v3 had no hysteresis (0.0).
+    stop_hysteresis: 0.03
 
 policy_runner:
   ros__parameters:

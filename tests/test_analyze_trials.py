@@ -349,6 +349,16 @@ def test_logs_from_rosbag(trials_csv, tmp_path, layout):
         assert any("1 /safety_gate/status message(s) are not JSON objects" in i for i in a.issues)
 
 
+def test_logs_from_a_rosbag_without_the_topics(trials_csv, synthetic_bags):
+    # camera frames, odometry and commands, but neither /policy/latency nor /safety_gate/status
+    bag = synthetic_bags["jazzy_trials"].path
+    a = at.analyze(trials_csv, latency_sources=["x=%s" % bag], gate_sources=[str(bag)], n_boot=100)
+    assert any("no %s records" % at.LATENCY_TOPIC in i for i in a.issues)
+    assert any("no %s records" % at.GATE_TOPIC in i for i in a.issues)
+    assert not any("not JSON objects" in i for i in a.issues)
+    at.render_report(a)
+
+
 def test_missing_log_path_is_an_input_error(trials_csv, tmp_path, capsys):
     rc = at.main([str(trials_csv), "--out-dir", str(tmp_path), "--gate", str(tmp_path / "nope.jsonl")])
     assert rc == 2

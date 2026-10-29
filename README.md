@@ -236,7 +236,8 @@ either method degrades. The **harder evaluation (v2)** after it adds randomisati
 beyond the training distribution and the robot's 62.2° lens, with 10 poses × 3 rounds per
 condition. Its results are in [results/sim_eval_v2](results/sim_eval_v2/SUMMARY.md). **v3**
 re-records the demonstrations under the corrected judge, retrains BC and evaluates it under the
-same conditions: [results/sim_eval_v3_bcfix](results/sim_eval_v3_bcfix/SUMMARY.md).
+same conditions: [results/sim_eval_v3_bcfix](results/sim_eval_v3_bcfix/SUMMARY.md). **v4**
+changes the stop rules and is pre-registered but not run yet (see the end of this section).
 
 ### Clean run (pipeline check; at ceiling for the servo, floor for BC)
 
@@ -413,7 +414,9 @@ What v3 shows:
   it predicts 0.013 m/s (BC v1: 0.024).
 - **BC v2 now passes the judge by creeping, not by stopping.** With the 80° lens it requests
   ~0.017 m/s and commands a stop in 1 of 70 trials. The judge counts that creep as still, so BC
-  v2 matches the servo there.
+  v2 matches the servo there. (That 1, and `bc_v2sw`'s 1/30 in `noise`, turned out to be the
+  policy runner's fallback zero on a stale frame, not a request of the policy; found while
+  preparing v4, which counts stops without them.)
 - **Under the 62.2° lens, BC v2 stops short.** The marker looks 1.39× larger, so BC v2 stops at
   ~0.34 m, just outside the band: 0/30, against BC v1's creep-driven 20/30.
 - **The stop weighting changed the offline numbers, not the closed-loop outcome.** It brought
@@ -422,6 +425,33 @@ What v3 shows:
 - **The headline numbers are a threshold effect.** BC's improvement on the success rule comes
   from the 0.02 m/s threshold, not from learning to stop. Testing stopping needs demonstrations
   that end on a commanded stop.
+
+### Clean-stop protocol (v4; pre-registered, not run yet)
+
+v3 showed that the judge's "still" threshold, not a learned stop, decided the BC results. From
+v4 on, two defaults change; [results/sim_eval_v4_cleanstop/PREREG.md](results/sim_eval_v4_cleanstop/PREREG.md)
+has the design, the predictions and the commands.
+
+- **Judge.** A request on `/cmd_vel_in` counts as still only at |v| ≤ 0.005 m/s (`dock_judge`
+  `request_still_v`; it was 0.02 m/s, the odometry limit). Creep of 0.012–0.019 m/s, which the
+  v3 servo and BC ended on, no longer passes as a stop.
+- **Servo.** A stop latch with hysteresis: v is exactly 0 once the range estimate is ≤ 0.27 m
+  and stays 0 until it is above 0.30 m (`servo_baseline` `stop_hysteresis` 0.03 m), so lidar
+  noise cannot toggle the stop and its successful demonstrations end on a commanded stop.
+- **Tools.** `scripts/sim_e2e.sh --hfov 1.0856` records demonstrations through the robot's
+  lens; `SIM_CPUSET=0-2` pins the simulation container of `sim_e2e.sh` and `sim_eval.sh`.
+- **Analysis.** `stop_labels.py bags` writes the largest request of each demonstration's last
+  second unrounded, so an exact stop can be read from the CSV. The controllers also send zero
+  on stale input, and that stop is not the controller's decision. `sim_eval_summary.py`
+  therefore counts "stop commanded" on the controller's own requests, without the policy
+  runner's fallback zeros (exactly (0, 0), sent on a missing or too old frame, as on the tick
+  that follows at once an inference that overran its 100 ms period). It flags successes whose
+  last second had fewer than 5 camera frames or fresh policy inferences, or any fallback zero.
+- **Run checks.** `sim_eval.sh` now ends with a nonzero status when a report fails (the trials
+  are kept; rerun with `--report-only`), and its provenance counts the paths that differ from
+  the commit without the run's own result files.
+- **The numbers above used the old rules.** The clean run, v2 and v3 are reproduced with
+  `request_still_v: 0.02` and `stop_hysteresis: 0.0` (e.g. in `config/sim.yaml`).
 
 ## Tests
 
@@ -438,12 +468,10 @@ BC training and ONNX export parity, the statistics against statsmodels/scipy, an
 
 Last run (October 2026):
 
-- **Containers.** 243 tests on each of Foxy and Jazzy, with 0 failures and 6 skips. Humble was
-  last run before the v2 wide-pose check was added, at 242 tests with 0 failures and 6 skips.
-  The skipped tests are the ONNX Runtime and TorchScript backend checks; the base images have
-  neither package.
-- **Host.** 340 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`. The
-  container suites were not re-run for v3: no ROS package changed.
+- **Containers.** 269 tests on each of Foxy, Humble and Jazzy (with the v4 stop rules), with 0
+  failures and 6 skips. The skipped tests are the ONNX Runtime and TorchScript backend checks;
+  the base images have neither package.
+- **Host.** 377 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`.
 
 ## Limitations
 
@@ -465,7 +493,8 @@ Last run (October 2026):
   - BC v2 and the stop-weighted BC therefore pass the judge by creeping. Under the 62.2° lens
     they stop short of the band (results/sim_eval_v3_bcfix).
   - Demonstrations that end on a commanded stop need a stricter demo-ending rule or a servo
-    with hysteresis on its stop range.
+    with hysteresis on its stop range. The v4 protocol adds both; it is pre-registered and has
+    not been run yet.
 - **Recorded actions are requests, not motion.** `action` is `/cmd_vel_in`, before the gate
   scales or blocks it near the box. The bags also hold `/cmd_vel` and the gate status, but the
   dataset does not use them yet.

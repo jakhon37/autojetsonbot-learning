@@ -21,6 +21,7 @@ from jbl_nodes.judge_logic import (
     is_intervention,
     range_from_marker_area,
     servo_command,
+    update_stop_latch,
     validate_servo_params,
 )
 
@@ -182,10 +183,14 @@ def test_success_conditions_and_thresholds(change, ok):
     [
         (None, True),  # no fresh request: the gate outputs zero
         ((0.0, 0.0), True),
-        ((0.02, -0.05), True),
+        ((0.005, -0.05), True),  # request_still_v and stopped_w are inclusive
+        ((-0.005, 0.05), True),
+        ((0.006, 0.0), False),
+        ((-0.006, 0.0), False),
+        ((0.019, 0.0), False),  # the servo's creep that the v2/v3 rule (<= 0.02) called still
         ((0.04, 0.0), False),  # still asking to drive; only the gate's slow zone holds it back
+        ((0.0, 0.051), False),
         ((0.0, 0.2), False),
-        ((-0.03, 0.0), False),
     ],
 )
 def test_stopped_needs_the_request_to_be_still_too(cmd, ok):
@@ -197,6 +202,29 @@ def test_stopped_needs_the_request_to_be_still_too(cmd, ok):
     assert judge.status()["stopped"] == ok
     if ok:
         assert decided[0][1].outcome == OUTCOME_SUCCESS and decided[0][0] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "config, odom_v, cmd, ok",
+    [
+        # request_still_v bounds only the request: the odometry keeps stopped_v (0.02).
+        (JudgeConfig(), 0.02, (0.005, 0.0), True),
+        (JudgeConfig(), 0.021, (0.0, 0.0), False),
+        (JudgeConfig(), -0.02, None, True),
+        (JudgeConfig(request_still_v=0.0), 0.02, (0.0, 0.0), True),
+        (JudgeConfig(request_still_v=0.0), 0.0, (0.001, 0.0), False),
+        (JudgeConfig(stopped_v=0.01), 0.015, (0.0, 0.0), False),  # and stopped_v only the odometry
+        (JudgeConfig(stopped_v=0.01), 0.0, (0.005, 0.0), True),
+        # request_still_v:=0.02 is the v2/v3 rule: creep up to 0.02 m/s counts as still.
+        (JudgeConfig(request_still_v=0.02), 0.015, (0.02, -0.05), True),
+        (JudgeConfig(request_still_v=0.02), 0.015, (0.021, 0.0), False),
+    ],
+)
+def test_request_and_odometry_thresholds_are_separate(config, odom_v, cmd, ok):
+    judge = DockJudge(config)
+    judge.start_episode(0.0)
+    decided = run(judge, 0.0, 2.0, v=odom_v, cmd=cmd)
+    assert bool(decided) == ok and judge.status()["stopped"] == ok
 
 
 def test_timeout_fails_at_30_s():
@@ -338,6 +366,7 @@ def test_invalid_config_is_rejected():
         JudgeConfig(timeout_s=0.0),
         JudgeConfig(hold_s=-1.0),
         JudgeConfig(bearing_tol_deg=0.0),
+        JudgeConfig(request_still_v=-0.001),
     ):
         with pytest.raises(ValueError):
             DockJudge(bad)
@@ -395,9 +424,134 @@ def test_servo_searches_when_the_marker_is_not_visible():
 
 def test_servo_params_validation():
     validate_servo_params(P)
-    for bad in (ServoParams(k_v=0.0), ServoParams(v_max=-0.1), ServoParams(slow_bearing_deg=3.0)):
+    validate_servo_params(ServoParams(stop_hysteresis=0.0))
+    for bad in (
+        ServoParams(k_v=0.0),
+        ServoParams(v_max=-0.1),
+        ServoParams(slow_bearing_deg=3.0),
+        ServoParams(stop_hysteresis=-0.01),
+    ):
         with pytest.raises(ValueError):
             validate_servo_params(bad)
+
+
+# ---------------------------------------------------------------- servo stop latch
+
+STOP_AT = P.target_range + P.range_tol  # 0.27 m
+RELEASE_ABOVE = STOP_AT + P.stop_hysteresis  # 0.30 m
+
+
+def test_stop_latch_engages_at_the_stop_range():
+    assert P.stop_hysteresis == pytest.approx(0.03)
+    assert update_stop_latch(False, STOP_AT, P) is True
+    assert update_stop_latch(False, 0.20, P) is True
+    assert update_stop_latch(False, STOP_AT + 1e-6, P) is False
+    assert update_stop_latch(False, 1.0, P) is False
+
+
+def test_stop_latch_stays_on_inside_the_hysteresis_and_releases_above_it():
+    for r in (0.15, STOP_AT, 0.28, 0.29, RELEASE_ABOVE):
+        assert update_stop_latch(True, r, P) is True, r
+    assert update_stop_latch(True, RELEASE_ABOVE + 1e-6, P) is False
+    assert update_stop_latch(True, 1.5, P) is False
+
+
+def test_stop_latch_keeps_its_state_while_the_range_is_unknown():
+    assert update_stop_latch(True, None, P) is True
+    assert update_stop_latch(False, None, P) is False
+
+
+def test_stop_latch_reset_does_not_re_engage_inside_the_hysteresis():
+    # servo_baseline resets the latch (False) at every episode start: a start within the
+    # hysteresis band drives on to the stop range instead of standing there.
+    latched = True
+    for r in (0.29, 0.285):
+        latched = update_stop_latch(latched, r, P)
+    assert latched is True
+    latched = False  # reset
+    trace = [update_stop_latch(latched, r, P) for r in (0.29, 0.285)]
+    assert trace == [False, False]
+
+
+def test_stop_latch_ignores_lidar_noise_around_the_stop_range():
+    """sigma 5 mm (sim_world NoiseConfig scan_noise_std, per beam; the sector median is less
+    noisy) around 0.27 m: the v2/v3 law toggles hundreds of times, the latch never releases."""
+    ranges = 0.27 + np.random.default_rng(20261029).normal(0.0, 0.005, 3000)
+    assert ranges.max() > STOP_AT + 0.015  # far enough out to restart the v2/v3 law's creep
+
+    def changes(params):
+        latched, trace = False, []
+        for r in ranges:
+            latched = update_stop_latch(latched, float(r), params)
+            trace.append(latched)
+        return trace, sum(a != b for a, b in zip(trace, trace[1:]))
+
+    trace, n = changes(P)
+    first = trace.index(True)
+    assert all(trace[first:]) and n == 0, "once on, never released"
+    _, n_v3 = changes(P._replace(stop_hysteresis=0.0))
+    assert n_v3 > 100
+
+
+def v3_law(bearing_deg, range_m, p, search_sign=1.0):
+    """servo_command as it was in v2/v3 (before the stop latch), for the comparison below."""
+    if bearing_deg is None:
+        return 0.0, math.copysign(p.search_w, search_sign)
+    if abs(bearing_deg) <= p.bearing_deadband_deg:
+        w = 0.0
+    else:
+        w = min(max(p.k_w * math.radians(bearing_deg), -p.w_max), p.w_max)
+    if range_m is None or range_m <= p.target_range + p.range_tol:
+        v = 0.0
+    else:
+        heading_scale = max(0.0, 1.0 - abs(bearing_deg) / p.slow_bearing_deg)
+        v = min(p.k_v * (range_m - p.target_range), p.v_max) * heading_scale
+    return v, w
+
+
+def test_zero_hysteresis_is_the_v3_law():
+    bearings = [None, -40.0, -25.0, -12.0, -4.0, -1.0, 0.0, 3.9, 4.0, 4.1, 9.9, 10.0, 24.9, 30.0]
+    ranges = [None, 0.10, 0.18, 0.25, 0.2699, 0.27, 0.2701, 0.28, 0.29, 0.30, 0.3001, 0.32, 0.5, 2.0]
+    for p in (ServoParams(stop_hysteresis=0.0), ServoParams(k_v=0.8, k_w=1.5, v_max=0.12, stop_hysteresis=0.0)):
+        for before in (False, True):
+            for b in bearings:
+                for r in ranges:
+                    for sign in (1.0, -1.0):
+                        latched = update_stop_latch(before, r, p)
+                        got = servo_command(b, r, p, sign, latched=latched)
+                        assert got == v3_law(b, r, p, sign), (before, b, r, sign)
+    # A sequence too: noise around the stop range gives the same commands as the v3 law.
+    p0 = ServoParams(stop_hysteresis=0.0)
+    latched = False
+    for r in 0.27 + np.random.default_rng(1).normal(0.0, 0.005, 500):
+        latched = update_stop_latch(latched, float(r), p0)
+        assert servo_command(2.0, float(r), p0, latched=latched) == v3_law(2.0, float(r), p0)
+
+
+def test_servo_latched_means_v_exactly_zero_and_w_still_centres():
+    for r in (None, 0.2, 0.29, 0.5, 2.0):
+        for b in (0.0, 3.0, -8.0, 20.0):
+            v, w = servo_command(b, r, P, latched=True)
+            assert v == 0.0 and w == servo_command(b, 2.0, P)[1], (r, b)
+    assert servo_command(None, 0.29, P, -1.0, latched=True) == (0.0, -P.search_w)  # search still turns
+    assert servo_command(0.0, 0.29, P, latched=False)[0] == pytest.approx(P.k_v * 0.04)  # unlatched: v3 creep
+    assert servo_command(0.0, 0.29, P) == servo_command(0.0, 0.29, P, latched=False)  # off by default
+
+
+def test_servo_with_latch_stops_once_and_stays_stopped_on_a_noisy_approach():
+    """Closing in at 1 mm per sample with sigma 5 mm noise: the request falls to exactly 0 at the
+    first reading at or below 0.27 m and stays 0, where the v2/v3 law restarted its creep."""
+    rng = np.random.default_rng(7)
+    true = np.concatenate([np.linspace(0.32, 0.27, 51), np.full(200, 0.268)])
+    latched, v_trace = False, []
+    for r in true + rng.normal(0.0, 0.005, true.size):
+        latched = update_stop_latch(latched, float(r), P)
+        v_trace.append(servo_command(1.0, float(r), P, latched=latched)[0])
+    first_stop = v_trace.index(0.0)
+    assert all(v == 0.0 for v in v_trace[first_stop:])
+    assert all(v > 0.0 for v in v_trace[:first_stop])
+    restarts = sum(1 for a, b in zip(v_trace, v_trace[1:]) if a == 0.0 and b > 0.0)
+    assert restarts == 0
 
 
 def test_range_from_marker_area_inverts_the_pinhole_model():

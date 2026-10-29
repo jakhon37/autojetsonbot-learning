@@ -54,7 +54,13 @@
 #   --schedule-seed N make_schedule.py seed (default 2026)
 #   --domain-id N     ROS_DOMAIN_ID inside the container (default 24)
 #   --report-only     skip the trials, only analyse
-# Environment: HTTPS_PROXY and CA_BUNDLE as in scripts/docker_test.sh.
+# Environment: HTTPS_PROXY and CA_BUNDLE as in scripts/docker_test.sh; SIM_CPUSET (e.g. 0-2)
+# pins the simulation container to those cores (docker run --cpuset-cpus; empty = not pinned).
+# Each segment in segments.txt (and so provenance.txt) records the commit, the paths that differ
+# from it (outside results/, and tracked under results/), SIM_CPUSET, /proc/loadavg at its start
+# and end, and the stop rules and lens the running nodes report.
+# Exit status 1 when a trial run fails (the remaining conditions are not run) or when a report or
+# the summary table fails (all trials are kept; rerun the same command with --report-only).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -67,6 +73,13 @@ ROBOT_HFOV=1.0856
 
 log() { printf '\n[sim_eval %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { printf '[sim_eval] error: %s\n' "$*" >&2; exit 1; }
+# Paths that differ from the commit, for the provenance: outside results/ (code, configs, docs;
+# untracked files included) and tracked files under results/. A run's own new result files are
+# untracked under results/ and not counted, so both stay 0 while the code is the commit's.
+dirty_line() {
+  echo "dirty: $(git -C "$REPO" status --porcelain -- . ':(exclude)results' 2>/dev/null | wc -l) paths outside" \
+    "results/, $(git -C "$REPO" status --porcelain --untracked-files=no -- results 2>/dev/null | wc -l) tracked under results/"
+}
 
 # condition -> fake_robot seed and randomize, start poses file (in the package share), camera
 # HFOV, rounds
@@ -126,6 +139,19 @@ run_episode() {
   sleep 1
 }
 
+# node.param ... -> "node.param: value" lines, as the running nodes report them (provenance)
+node_params() {
+  local spec pids=() dir
+  dir=$(mktemp -d)
+  for spec in "$@"; do
+    { ros2 param get --no-daemon --spin-time 2 --hide-type "/${spec%%.*}" "${spec#*.}" > "$dir/$spec" 2>&1 || true; } &
+    pids+=($!)
+  done
+  wait "${pids[@]}" || true
+  for spec in "$@"; do echo "$spec: $(tail -n 1 "$dir/$spec")"; done
+  rm -rf "$dir"
+}
+
 wait_for_nodes() {
   local deadline=$((SECONDS + 60)) missing nodes
   while :; do
@@ -138,12 +164,13 @@ wait_for_nodes() {
   done
 }
 
-# SCHEDULE CSV BAG LAUNCH_LOG SERVO_LOG SEED RANDOMIZE POSES_FILE HFOV EXTRA_PARAMS WITH_SERVO
-# from the environment, plus POLICY_METHOD and MODEL for a policy arm (POLICY_METHOD empty: none).
+# SCHEDULE CSV BAG LAUNCH_LOG SERVO_LOG PARAMS_LOG SEED RANDOMIZE POSES_FILE HFOV EXTRA_PARAMS
+# WITH_SERVO from the environment, plus POLICY_METHOD and MODEL for a policy arm (POLICY_METHOD
+# empty: none).
 # shellcheck disable=SC2153
 inner_run() {
   : "${SCHEDULE:?}" "${CSV:?}" "${BAG:?}" "${LAUNCH_LOG:?}" "${SERVO_LOG:?}" "${SEED:?}" "${POSES_FILE:?}"
-  : "${HFOV:?}" "${EXTRA_PARAMS:?}" "${RANDOMIZE:?}" "${WITH_SERVO:?}"
+  : "${HFOV:?}" "${EXTRA_PARAMS:?}" "${RANDOMIZE:?}" "${WITH_SERVO:?}" "${PARAMS_LOG:?}"
   # shellcheck source=/dev/null
   . "/opt/ros/$ROS_DISTRO/setup.bash"
   # shellcheck source=/dev/null
@@ -179,6 +206,11 @@ inner_run() {
   # shellcheck disable=SC2064  # the pids are fixed now
   trap "$stop" EXIT
   wait_for_nodes "${nodes[@]}"
+  local reported=(dock_judge.request_still_v dock_judge.hfov_rad fake_robot.camera_hfov_rad)
+  if [[ " ${nodes[*]} " == *" servo_baseline "* ]]; then
+    reported+=(servo_baseline.stop_hysteresis servo_baseline.hfov_rad)
+  fi
+  node_params "${reported[@]}" > "$PARAMS_LOG"
   sleep 3
   # Subscribers of /episode/event: these nodes but safety_gate, plus the recorder.
   EXPECT=${#nodes[@]}
@@ -265,6 +297,7 @@ container() {
   [ -n "$CONTAINER" ] && return 0
   local args=(-d --name "jbl_eval_${DISTRO}_$$" -e "ROS_DOMAIN_ID=$DOMAIN_ID" -e PYTHONUNBUFFERED=1
               -v "$REPO:/repo:ro" -v "$WORK:/work")
+  [ -z "${SIM_CPUSET:-}" ] || args+=(--cpuset-cpus "$SIM_CPUSET")
   if [ -n "${HTTPS_PROXY:-}" ]; then
     args+=(--network host -e "HTTPS_PROXY=$HTTPS_PROXY" -e "https_proxy=$HTTPS_PROXY")
   fi
@@ -302,17 +335,27 @@ for cond in "${CONDITIONS[@]}"; do
   seg=seg_$(date -u +%Y%m%dT%H%M%SZ)
   { echo "segment: $seg ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
     echo "commit: $(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo none)"
-    echo "dirty: $(git -C "$REPO" status --porcelain 2>/dev/null | wc -l) paths"
+    dirty_line
+    echo "SIM_CPUSET: ${SIM_CPUSET:-(not set: container not pinned)}"
+    echo "loadavg at start: $(cat /proc/loadavg)"
   } >> "$dir/segments.txt"
   log "$cond: $METHODS; fake_robot randomize $(condition_randomize "$cond") seed $seed, poses $poses, camera HFOV $hfov rad -> eval_v2/$DISTRO/$cond ($seg)"
+  rc=0
   docker exec -e SCHEDULE="/work/eval_v2/$DISTRO/$cond/schedule.csv" \
     -e CSV="/work/eval_v2/$DISTRO/$cond/trials.csv" -e BAG="/work/eval_v2/$DISTRO/$cond/bags/$seg" \
     -e LAUNCH_LOG="/work/eval_v2/$DISTRO/$cond/logs/$seg.launch.log" \
     -e SERVO_LOG="/work/eval_v2/$DISTRO/$cond/logs/$seg.servo.log" \
+    -e PARAMS_LOG="/work/eval_v2/$DISTRO/$cond/logs/$seg.params.txt" \
     -e SEED="$seed" -e RANDOMIZE="$(condition_randomize "$cond")" -e POSES_FILE="$poses" -e HFOV="$hfov" \
     -e EXTRA_PARAMS="/work/eval_v2/$DISTRO/$cond/params.yaml" -e MODEL=/work/runs/bc/policy.onnx \
     -e POLICY_METHOD="$POLICY_METHOD" -e WITH_SERVO="$WITH_SERVO" \
-    "$CONTAINER" bash /repo/scripts/sim_eval.sh --inner run
+    "$CONTAINER" bash /repo/scripts/sim_eval.sh --inner run || rc=$?
+  { echo "nodes report:"
+    sed 's/^/  /' "$dir/logs/$seg.params.txt" 2>/dev/null || echo "  (no $seg.params.txt)"
+    echo "loadavg at end: $(cat /proc/loadavg) ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+    [ "$rc" -eq 0 ] || echo "segment failed: exit status $rc"
+  } >> "$dir/segments.txt"
+  [ "$rc" -eq 0 ] || die "$cond: the trial run failed with exit status $rc (see eval_v2/$DISTRO/$cond/logs/$seg.*)"
 done
 cleanup
 CONTAINER=
@@ -324,8 +367,9 @@ report() {
   hfov=$(condition_hfov "$cond")
   [ -s "$dir/trials.csv" ] || { log "$cond: no trials yet; no report"; return 0; }
   log "$cond: ground truth, then analyze_trials -> ${out#"$REPO"/}"
+  # Each step ends in || return 1: report is called as `report ... ||`, where bash ignores set -e.
   "$PY" "$REPO/scripts/sim_eval_summary.py" episodes --bags "$dir/bags" \
-    --poses "$REPO/ros2_ws/src/jbl_nodes/config/$poses" --out "$dir/episodes_gt.csv"
+    --poses "$REPO/ros2_ws/src/jbl_nodes/config/$poses" --out "$dir/episodes_gt.csv" || return 1
   { echo "condition: $cond"
     echo "arms: $METHODS"
     echo "fake_robot: randomize $(condition_randomize "$cond"), seed $seed, start poses config/$poses, camera_hfov_rad $hfov"
@@ -339,7 +383,7 @@ report() {
     fi
     echo
     cat "$dir/segments.txt" 2>/dev/null || true
-  } > "$dir/provenance.txt"
+  } > "$dir/provenance.txt" || return 1
   sources=(--gate "session=$dir/bags")
   [ -z "$POLICY_METHOD" ] || sources+=(--latency "sim-cpu-onnxruntime=$dir/bags")
   for p in "${PAIR_WITH[@]}"; do
@@ -349,9 +393,9 @@ report() {
     if [ -d "$p/$cond/bags" ]; then sources+=(--latency "earlier$k=$p/$cond/bags" --gate "earlier$k=$p/$cond/bags"); fi
   done
   # trials.csv, schedule.csv and episodes_gt.csv of the earlier sessions, then this one's
-  "$PY" "$REPO/scripts/sim_eval_summary.py" merge --out "$out" "${parts[@]}" "$dir"
+  "$PY" "$REPO/scripts/sim_eval_summary.py" merge --out "$out" "${parts[@]}" "$dir" || return 1
   "$PY" "$REPO/tools/analyze_trials.py" "$out/trials.csv" --out-dir "$out" --schedule "$out/schedule.csv" \
-    --setting "SIMULATION (fake_robot, ROS 2 $DISTRO), condition $cond" "${sources[@]}"
+    --setting "SIMULATION (fake_robot, ROS 2 $DISTRO), condition $cond" "${sources[@]}" || return 1
   { cat "$dir/provenance.txt"
     k=0
     for p in "${parts[@]}"; do
@@ -360,12 +404,17 @@ report() {
       echo "== earlier$k: rows of ${p#"$REPO"/} (an earlier session; its own noise draws) =="
       cat "$p/provenance.txt" 2>/dev/null || echo "(no provenance.txt)"
     done
-  } > "$out/provenance.txt"
+  } > "$out/provenance.txt" || return 1
+  # merge leaves it out when an input has none (its message is above): the ground truth is missing
+  [ -f "$out/episodes_gt.csv" ] || { log "$cond: no episodes_gt.csv in ${out#"$REPO"/}"; return 1; }
 }
 
+# A failed report leaves the recorded trials as they are, and the run ends with exit status 1.
+failed=()
 for cond in "${CONDITIONS[@]}"; do
-  report "$cond" || log "$cond: report failed (rerun with --report-only)"
+  report "$cond" || { log "$cond: report failed (rerun with --report-only)"; failed+=("$cond"); }
 done
 "$PY" "$REPO/scripts/sim_eval_summary.py" table --results "$RESULTS" --conditions clean_ref $ALL_CONDITIONS \
-  --vs bc --out "$RESULTS/SUMMARY_table.md" || log "summary table failed (rerun with --report-only)"
+  --vs bc --out "$RESULTS/SUMMARY_table.md" || { log "summary table failed (rerun with --report-only)"; failed+=(table); }
+[ ${#failed[@]} -eq 0 ] || die "report failed: ${failed[*]}; the trials are recorded, rerun the same command with --report-only"
 log "done: ${RESULTS#"$REPO"/}"
