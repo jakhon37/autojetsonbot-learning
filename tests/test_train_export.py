@@ -84,6 +84,32 @@ def test_training_inputs_match_robot_preprocessing(dataset_root):
     np.testing.assert_array_equal(state.numpy(), preprocess.twist_to_action(*item["observation.state"].tolist()))
 
 
+@pytest.fixture(scope="module")
+def png_dataset_root(synthetic_bags, tmp_path_factory):
+    """One synthetic bag converted with --video off: frames stored as PNG images."""
+    import bag_to_lerobot
+
+    root = tmp_path_factory.mktemp("datasets_png") / "jbl_png"
+    bags = bag_to_lerobot.find_bags([synthetic_bags["foxy_teleop"].path])
+    bag_to_lerobot.convert(bags, root, REPO_ID, fps=10, video="off")
+    return root
+
+
+def test_image_stored_frames_reach_the_model_as_uint8(png_dataset_root):
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    ds = LeRobotDataset(REPO_ID, root=png_dataset_root, return_uint8=True)
+    item = ds[0]
+    assert item[IMAGE_KEY].dtype == torch.float32  # what LeRobot serves for image storage
+    stored = np.asarray(ds.hf_dataset.with_format(None)[0][IMAGE_KEY])  # the PNG as written
+    assert stored.dtype == np.uint8 and stored.shape == (240, 320, 3)
+    np.testing.assert_array_equal(train_bc.frame_rgb_uint8(item[IMAGE_KEY]), stored)
+    x, _, _ = train_bc.BCFrames([item], augment=None)[0]
+    np.testing.assert_array_equal(x.numpy(), preprocess.to_model_input(stored))
+    (exported,) = export_onnx.dataset_inputs(png_dataset_root, REPO_ID, 1)
+    np.testing.assert_array_equal(exported[0], preprocess.to_model_input(stored))
+
+
 def test_hflip_negates_turn_rate():
     rgb = np.zeros((240, 320, 3), dtype=np.uint8)
     rgb[:, :100] = (200, 40, 40)  # asymmetric: red on the left
@@ -225,6 +251,39 @@ def test_train_act_two_steps_on_cpu(dataset_root, tmp_path):
     train_config = json.loads((model_dir / "train_config.json").read_text())
     assert train_config["dataset"]["episodes"] == [0, 2] and train_config["steps"] == 2
     assert (model_dir / "model.safetensors").is_file()
+
+
+def test_train_act_defaults_to_successful_teleop_training_episodes(dataset_root, tmp_path):
+    stub = tmp_path / "lerobot-train"  # records the arguments instead of training
+    stub.write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > "%s"\n' % (tmp_path / "args.txt"))
+    stub.chmod(0o755)
+    env = dict(os.environ, DATASET_ROOT=str(dataset_root), REPO_ID=REPO_ID, OUT=str(tmp_path / "act"), DEVICE="cpu",
+               LEROBOT_TRAIN=str(stub), PYTHON=sys.executable)
+    env.pop("EPISODES", None)
+
+    def episodes_arg(**extra):
+        proc = subprocess.run(["bash", str(TOOLS / "train_act.sh")], env=dict(env, **extra), capture_output=True,
+                              text=True, timeout=120)
+        args = (tmp_path / "args.txt").read_text().splitlines() if proc.returncode == 0 else []
+        (tmp_path / "args.txt").unlink(missing_ok=True)
+        return proc, [a for a in args if a.startswith("--dataset.episodes=")]
+
+    records = jbl_episodes.filter_episodes(jbl_episodes.read_episode_meta(dataset_root), ["success"], ["teleop"])
+    train, _ = jbl_episodes.split_episodes(records, 0.2, 0, "pose_id")
+    assert train, "the synthetic dataset has a successful teleop demo"
+    proc, args = episodes_arg()
+    assert proc.returncode == 0, proc.stderr
+    assert args == ["--dataset.episodes=%s" % train]
+    left_out = {(r["method"], r["outcome"]) for r in jbl_episodes.read_episode_meta(dataset_root)
+                if r["episode_index"] not in train}
+    assert ("bc", "fail") in left_out, "policy rollouts and failures are left out"
+
+    proc, args = episodes_arg(EPISODES="all")  # the escape hatch: no episode filter at all
+    assert proc.returncode == 0 and args == []
+    proc, args = episodes_arg(EPISODES="[0,2]")
+    assert proc.returncode == 0 and args == ["--dataset.episodes=[0,2]"]
+    proc, _ = episodes_arg(METHODS="dagger")
+    assert proc.returncode == 2 and "no training episodes match" in proc.stderr
 
 
 def test_make_marker(tmp_path):

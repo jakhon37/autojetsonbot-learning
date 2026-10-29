@@ -1,0 +1,7 @@
+condition: clean_ref (reference, not part of the v2 runs)
+trials.csv: copied unchanged from results/sim_e2e/jazzy/trials.csv (scripts/sim_e2e.sh servo + bc
+  stages, 29 October 2026; fake_robot randomize false; test poses 0-9; 1 round; servo and bc run
+  in separate launches, not interleaved). Its provenance: results/sim_e2e/jazzy/provenance.txt.
+episodes_gt.csv: python scripts/sim_eval_summary.py episodes --bags sim_work/bags/jazzy/servo
+  sim_work/bags/jazzy/bc --out results/sim_eval_v2/clean_ref/episodes_gt.csv
+policy.onnx sha256: 7cfb1cbb09dc074bec4888d9c604e57544c6dd700c93171615a767f89783bbc7 (same model as v2)

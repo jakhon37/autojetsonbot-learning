@@ -7,11 +7,12 @@ Subscribes
         end <outcome> [reason ...]         closes the open episode: one row, notes = reason;
                                            an end with no open episode (e.g. the judge's and
                                            the operator's for the same trial) is ignored
-        intervention [note ...]            counts an operator intervention in the open episode;
-                                           an end whose reason starts with "intervention"
-                                           counts at least one (dock_judge's "end fail
-                                           intervention" can arrive before the operator's
-                                           message: they come from different writers)
+        intervention [note ...]            counts an operator intervention in the open episode
+                                           (``episode intervention <note>``) and adds the note
+                                           to the row's notes; an end whose reason starts with
+                                           "intervention" counts at least one (dock_judge's
+                                           "end fail intervention" can arrive before the
+                                           operator's message: they come from different writers)
     /dock_judge/status   the newest status before the end gives final_range_m and
                          final_bearing_deg; if it is older than status_timeout_s (or never
                          came) both are left empty and the notes say so
@@ -122,6 +123,7 @@ class _OpenEpisode(object):
         self.start = start
         self.t_ns = t_ns
         self.interventions = 0
+        self.notes: List[str] = []  # operator notes from intervention events
 
 
 class TrialLogger(Node):
@@ -161,6 +163,7 @@ class TrialLogger(Node):
                 self.get_logger().warning("'%s' outside an episode; not counted" % msg.data)
             else:
                 self._episode.interventions += 1
+                self._episode.notes.append(" ".join(msg.data.split()[1:]))
             return
         try:
             event = parse_episode_event(msg.data)
@@ -180,7 +183,7 @@ class TrialLogger(Node):
 
     def _write(self, outcome: str, reason: str, now_ns: int) -> None:
         episode, self._episode = self._episode, None
-        notes = [reason]
+        notes = [reason] + episode.notes
         final_range = final_bearing = None
         status_fresh = self._status_t_ns is not None and now_ns - self._status_t_ns <= self._status_timeout_ns
         if status_fresh:

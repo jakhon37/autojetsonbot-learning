@@ -54,8 +54,16 @@ run_episode() {
     rc=0
     episode start "$method" "$pose" "$round" || rc=$?
     [ "$rc" -eq 0 ] && break
-    if [ "$rc" -eq 3 ]; then  # some nodes started it: void it, then start again (an abort row)
-      episode end abort "start not delivered to every node" || true
+    if [ "$rc" -eq 3 ]; then  # some nodes started it
+      # PROTOCOL section 10: a crash of the method's own node is its fail, not an abort.
+      # controller_node is inner_trials' local (bash scoping is dynamic). A here-string, not a
+      # pipe into grep -q: SIGPIPE + pipefail.
+      if ! grep -qx "/$controller_node" <<< "$(ros2 node list --no-daemon --spin-time 3 2>/dev/null || true)"; then
+        EXPECT=$((EXPECT - 1)) episode end fail controller_down || true  # the live nodes get it
+        echo "   $(tail -n 1 "$CSV")"
+        return 0
+      fi
+      episode end abort "start not delivered to every node" || true  # void it, start again
       sleep 1
     fi
   done
@@ -141,18 +149,29 @@ inner_setup() {
   cd /ws && colcon build --event-handlers console_cohesion- --cmake-args -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3
 }
 
-# ONNX Runtime from PyPI next to the distro's own numpy (python3-opencv is built against it).
+# ONNX Runtime from PyPI next to the distro's own numpy (python3-opencv is built against it),
+# pinned to the versions the published runs used; the installed version is written to
+# /work/logs/<distro>/onnxruntime.txt for the report's provenance.
 inner_onnxruntime() {
-  if python3 -c "import onnxruntime" 2>/dev/null; then return 0; fi
-  local numpy_version pip_args=()
-  numpy_version=$(python3 -c "import numpy; print(numpy.__version__)")
-  if grep -q -- --break-system-packages <<< "$(python3 -m pip install --help)"; then
-    pip_args+=(--break-system-packages)  # Jazzy (PEP 668): the container is disposable
+  local ort
+  case $ROS_DISTRO in
+    foxy) ort=onnxruntime==1.10.0 ;;  # the last release that accepts Ubuntu 20.04's numpy 1.17
+    jazzy) ort=onnxruntime==1.31.1 ;;
+    *) ort=onnxruntime ;;  # not run for the published results
+  esac
+  if ! python3 -c "import onnxruntime" 2>/dev/null; then
+    local numpy_version pip_args=()
+    numpy_version=$(python3 -c "import numpy; print(numpy.__version__)")
+    if grep -q -- --break-system-packages <<< "$(python3 -m pip install --help)"; then
+      pip_args+=(--break-system-packages)  # Jazzy (PEP 668): the container is disposable
+    fi
+    # Foxy's pip 20.0 cannot read manylinux_2_27 wheel tags; a newer pip can.
+    python3 -m pip install -q "${pip_args[@]}" --upgrade "pip<25" >/dev/null 2>&1 || true
+    python3 -m pip install -q "${pip_args[@]}" "$ort" "numpy==$numpy_version"
   fi
-  # Foxy's pip 20.0 cannot read manylinux_2_27 wheel tags; a newer pip can.
-  python3 -m pip install -q "${pip_args[@]}" --upgrade "pip<25" >/dev/null 2>&1 || true
-  python3 -m pip install -q "${pip_args[@]}" onnxruntime "numpy==$numpy_version"
-  python3 -c "import onnxruntime; print('onnxruntime', onnxruntime.__version__, onnxruntime.get_available_providers())"
+  mkdir -p "/work/logs/$ROS_DISTRO"
+  python3 -c "import onnxruntime; print('onnxruntime', onnxruntime.__version__, onnxruntime.get_available_providers())" \
+    | tee "/work/logs/$ROS_DISTRO/onnxruntime.txt"
 }
 
 if [ "${1:-}" = --inner ]; then
@@ -205,6 +224,14 @@ LOGS=$WORK/logs/$DISTRO
 MODEL=$WORK/runs/bc/policy.onnx
 mkdir -p "$BAGS" "$TRIALS" "$LOGS" "$WORK/params"
 wants() { local s; for s in "${STAGES[@]}"; do [ "$s" = "$1" ] && return 0; done; return 1; }
+# What a stage ran: the commit and how many paths differed from it (results/ are regenerated
+# from the same tree, so a dirty count means uncommitted code changes too).
+provenance() {
+  { echo "stage: $1 ($(date -u +%Y-%m-%dT%H:%M:%SZ))"
+    echo "commit: $(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo none)"
+    echo "dirty: $(git -C "$REPO" status --porcelain 2>/dev/null | wc -l) paths"
+  } > "$LOGS/$1.provenance"
+}
 rounds_list() { seq -s ' ' 1 "$1"; }
 
 CONTAINER=
@@ -255,11 +282,13 @@ write_demo_params() {
 }
 
 if wants servo; then
+  provenance servo
   rm -f "$TRIALS/trials_servo.csv"
   trials servo servo "$(rounds_list "$ROUNDS")" "$TEST_POSES" trials_servo.csv servo
 fi
 
 if wants demos; then
+  provenance demos
   rm -f "$TRIALS/demos.csv"
   for r in $(rounds_list "$DEMO_ROUNDS"); do
     params=$(write_demo_params "$r")
@@ -270,6 +299,7 @@ if wants demos; then
 fi
 
 if wants train; then
+  provenance train
   bags=()
   for b in "$BAGS"/servo "$BAGS"/demos_r*; do [ -f "$b/metadata.yaml" ] && bags+=("$b"); done
   [ ${#bags[@]} -gt 0 ] || die "no servo/demo bags in $BAGS; run the servo and demos stages first"
@@ -289,6 +319,7 @@ fi
 
 if wants bc; then
   [ -f "$MODEL" ] || die "no $MODEL; run the train stage first"
+  provenance bc
   container
   log "installing onnxruntime in the container"
   docker exec "$CONTAINER" bash /repo/scripts/sim_e2e.sh --inner onnxruntime
@@ -315,8 +346,17 @@ if wants report; then
   for b in servo bc; do
     if [ -f "$BAGS/$b/metadata.yaml" ]; then extra+=(--gate "$b=$BAGS/$b"); fi
   done
+  # Every slot each method was run on, so the report shows skipped slots too (a slot whose
+  # start could not be delivered at all leaves no row).
+  schedule=$WORK/schedule_$DISTRO.csv
+  { echo method,pose_id,round
+    for m in servo bc; do
+      [ -s "$TRIALS/trials_$m.csv" ] || continue
+      for r in $(rounds_list "$ROUNDS"); do for p in $TEST_POSES; do echo "$m,$p,$r"; done; done
+    done
+  } > "$schedule"
   log "analyze_trials -> ${RESULTS#"$REPO"/}"
-  "$PY" "$REPO/tools/analyze_trials.py" "$combined" --out-dir "$RESULTS" \
+  "$PY" "$REPO/tools/analyze_trials.py" "$combined" --out-dir "$RESULTS" --schedule "$schedule" \
     --setting "SIMULATION (fake_robot, ROS 2 $DISTRO)" "${extra[@]}"
   if [ -s "$TRIALS/trials_bc.csv" ]; then  # the model these BC trials ran
     for f in policy_meta.json metrics.jsonl split.json; do
@@ -326,5 +366,16 @@ if wants report; then
   for f in episodes.txt train_bc.log export_onnx.log; do
     if [ -f "$LOGS/$f" ]; then keep "$LOGS/$f" "$RESULTS/$f"; fi
   done
+  # Provenance: what produced these numbers (each stage's commit, the image, the model).
+  { echo "report: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "commit: $(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo none)"
+    echo "dirty: $(git -C "$REPO" status --porcelain 2>/dev/null | wc -l) paths"
+    echo "image: $(docker image inspect --format '{{index .RepoDigests 0}}' "$REGISTRY/ros:$DISTRO-ros-base" 2>/dev/null || echo unknown)"
+    if [ -f "$MODEL" ]; then echo "policy.onnx sha256: $(sha256sum "$MODEL" | cut -d' ' -f1)"; fi
+    if [ -f "$LOGS/onnxruntime.txt" ]; then cat "$LOGS/onnxruntime.txt"; fi
+    for st in servo demos train bc; do
+      if [ -f "$LOGS/$st.provenance" ]; then echo; cat "$LOGS/$st.provenance"; fi
+    done
+  } > "$RESULTS/provenance.txt"
   log "done: report in ${RESULTS#"$REPO"/}/report.md"
 fi

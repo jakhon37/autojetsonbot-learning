@@ -9,11 +9,19 @@ converted or encoded for a topic that has no subscriber.
 
 Parameters
     source          "camera" or "test_pattern" (moving synthetic frames, no hardware needed)
-    device          int index (or "0"), a device path / video file / URL, or a GStreamer
-                    pipeline (any string containing '!'), e.g. for the Pi Camera v2 on the Nano:
-                    "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1280,height=720,
+    device          index ("0", default, or an int), a device path / video file / URL, or a
+                    GStreamer pipeline (any string containing '!'), e.g. for the Pi Camera v2 on
+                    the Nano (config/robot.yaml uses this one):
+                    "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1640,height=1232,
                     framerate=30/1 ! nvvidconv ! video/x-raw,width=640,height=480,format=BGRx !
                     videoconvert ! video/x-raw,format=BGR ! appsink drop=true max-buffers=1"
+                    1640x1232 is the IMX219's full-sensor binned 4:3 mode, so the image keeps
+                    the lens's whole field of view and its aspect ratio. Its 1280x720 and
+                    1920x1080 modes are centre crops: a narrower HFOV, and a VFOV too small to
+                    see the 10 cm marker when docked. The CSI camera is not a V4L2 device that
+                    OpenCV can read (/dev/video0 is raw RG10 Bayer): nvarguscamerasrc needs the
+                    container started with --runtime nvidia and -v /tmp/argus_socket:/tmp/argus_socket
+                    (docs/PROTOCOL.md section 4).
     width, height   published size (int, 640 x 480); other capture sizes are resized
     fps             raw publish rate cap and the rate requested from the driver (double, 30.0)
     compressed_fps  jpeg publish rate cap (double, 15.0; 0 disables the topic)
@@ -213,7 +221,9 @@ class CameraNode(Node):
         device_descriptor = ParameterDescriptor(description="camera index, path/URL, or GStreamer pipeline")
         if hasattr(device_descriptor, "dynamic_typing"):  # Galactic+: accept int or string
             device_descriptor.dynamic_typing = True
-        device = self.declare_parameter("device", 0, device_descriptor).value
+        # A string default, so that a pipeline from a params file has the declared type on every
+        # distro (Foxy has no dynamic_typing); parse_device turns "0" into the index 0.
+        device = self.declare_parameter("device", "0", device_descriptor).value
         self._width = int(self.declare_parameter("width", 640).value)
         self._height = int(self.declare_parameter("height", 480).value)
         fps = float(self.declare_parameter("fps", 30.0).value)

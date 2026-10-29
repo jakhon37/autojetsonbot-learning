@@ -147,7 +147,8 @@ TEST(SafetyGate, ReverseAndPureRotationAreNeverBlocked)
 
 TEST(SafetyGate, OnlyBeamsInsideTheSectorCount)
 {
-  const SafetyGateParams p;  // half angle 0.35 rad = 20.05 deg
+  SafetyGateParams p;  // half angle 0.35 rad = 20.05 deg
+  p.footprint_half_width = 0.0;  // the sector alone
   EXPECT_TRUE(forward_blocked(p, Scan().at(20.0 * kDeg, 0.16f)));
   EXPECT_TRUE(forward_blocked(p, Scan().at(-20.0 * kDeg, 0.16f)));
   EXPECT_FALSE(forward_blocked(p, Scan().at(21.0 * kDeg, 0.16f)));
@@ -160,6 +161,7 @@ TEST(SafetyGate, SectorWrapsAroundPlusMinusPi)
   for (const double forward : {kPi, -kPi}) {
     SafetyGateParams p;
     p.forward_angle = forward;
+    p.footprint_half_width = 0.0;  // the sector alone
     SCOPED_TRACE(forward);
     // Scan starts at -pi: the sector spans the first and the last beams.
     EXPECT_TRUE(forward_blocked(p, Scan().at(-kPi, 0.16f)));
@@ -175,6 +177,7 @@ TEST(SafetyGate, ForwardAngleAnywhereWithScansFromZeroToTwoPi)
   for (const double forward : {-kPi / 2.0, kPi / 2.0, 3.0, -3.0, 0.0}) {
     SafetyGateParams p;
     p.forward_angle = forward;
+    p.footprint_half_width = 0.0;  // the sector alone
     SCOPED_TRACE(forward);
     Scan from_zero;
     from_zero.angle_min = 0.0;  // some drivers publish [0, 2pi)
@@ -183,6 +186,35 @@ TEST(SafetyGate, ForwardAngleAnywhereWithScansFromZeroToTwoPi)
     EXPECT_FALSE(forward_blocked(p, Scan(from_zero).at(forward + 0.4, 0.16f)));
     EXPECT_FALSE(forward_blocked(p, Scan(from_zero).at(forward + kPi, 0.16f)));
   }
+}
+
+TEST(SafetyGate, ForwardCorridorCatchesObstaclesAheadOfAChassisCorner)
+{
+  const SafetyGateParams p;  // corridor +-0.15 m
+  // Just outside the sector, still ahead of the chassis: counted at its forward distance.
+  GateOutput out = run(p, Scan().at(21.0 * kDeg, 0.16f));
+  EXPECT_EQ(out.state, GateState::kStopObstacle);
+  ASSERT_TRUE(out.front_min.has_value());
+  EXPECT_NEAR(*out.front_min, 0.16 * std::cos(21.0 * kDeg), 1e-6);
+  // A box corner 0.15 m ahead and 0.12 m to the side of the lidar.
+  const double corner = std::atan2(0.12, 0.15);
+  EXPECT_TRUE(forward_blocked(p, Scan().at(corner, static_cast<float>(std::hypot(0.15, 0.12)))));
+  EXPECT_TRUE(forward_blocked(p, Scan().at(-corner, static_cast<float>(std::hypot(0.15, 0.12)))));
+  // Farther ahead it slows like an in-sector reading at the same forward distance.
+  out = run(p, Scan().at(21.0 * kDeg, 0.3324f));
+  EXPECT_EQ(out.state, GateState::kSlow);
+  EXPECT_NEAR(out.scale, (0.3324 * std::cos(21.0 * kDeg) - 0.17) / (0.45 - 0.17), 1e-6);
+  // Beside the corridor (|y| = 0.155 m) or behind the lidar: ignored.
+  EXPECT_FALSE(forward_blocked(p, Scan().at(75.0 * kDeg, 0.16f)));
+  EXPECT_FALSE(forward_blocked(p, Scan().at(-75.0 * kDeg, 0.16f)));
+  EXPECT_FALSE(forward_blocked(p, Scan().at(100.0 * kDeg, 0.16f)));
+  EXPECT_FALSE(forward_blocked(p, Scan().at(kPi, 0.16f)));
+  // Invalid readings outside the sector never count, even after a close reading.
+  SafetyGate gate(p);
+  ASSERT_TRUE(feed(gate, Scan().span(0.0, 0.35, 0.30f), 0.0));
+  ASSERT_TRUE(feed(gate, Scan().span(30.0 * kDeg, 5.0 * kDeg, 0.0f), 0.1));
+  gate.ingest_command(0.2, 0.0, 0.1);
+  EXPECT_EQ(gate.compute(0.1).state, GateState::kOk);
 }
 
 TEST(SafetyGate, NegativeAngleIncrement)
@@ -226,13 +258,73 @@ TEST(SafetyGate, InvalidReadingsAfterCloseReadingBlock)
   }
 }
 
-TEST(SafetyGate, SingleInvalidBeamNextToCloseReadingBlocks)
+TEST(SafetyGate, InvalidBeamsNextToCloseReadingBlock)
 {
-  // Edges of a box still return valid ranges while its centre is inside the dead zone.
+  // Edges of a box still return valid ranges (just past the dead zone) while its centre is
+  // inside it.
   SafetyGate gate;
   gate.ingest_command(0.2, 0.0, 0.0);
-  ASSERT_TRUE(feed(gate, Scan().span(0.0, 0.35, 0.40f).at(0.0, 0.0f), 0.0));
+  ASSERT_TRUE(feed(gate, Scan().span(0.0, 0.35, 0.19f).span(0.0, 2.5 * kDeg, 0.0f), 0.0));
   EXPECT_EQ(gate.compute(0.0).state, GateState::kStopObstacle);
+}
+
+TEST(SafetyGate, FewerInvalidBeamsThanTheMinimumDoNotBlock)
+{
+  const auto state = [](const SafetyGateParams & p, const Scan & scan) {
+      SafetyGate gate(p);
+      gate.ingest_command(0.2, 0.0, 0.0);
+      EXPECT_TRUE(feed(gate, scan, 0.0));
+      return gate.compute(0.0).state;
+    };
+  const Scan close = Scan().span(0.0, 0.35, 0.19f);
+  const SafetyGateParams p;  // min_invalid_beams 3
+  EXPECT_EQ(state(p, Scan(close).at(0.0, kInf)), GateState::kSlow);
+  EXPECT_EQ(state(p, Scan(close).at(0.0, kInf).at(10.0 * kDeg, 0.0f)), GateState::kSlow);
+  EXPECT_EQ(
+    state(p, Scan(close).at(0.0, kInf).at(10.0 * kDeg, 0.0f).at(-15.0 * kDeg, kNaN)),
+    GateState::kStopObstacle);
+
+  SafetyGateParams single = p;
+  single.min_invalid_beams = 1;
+  EXPECT_EQ(state(single, Scan(close).at(0.0, kInf)), GateState::kStopObstacle);
+
+  // A sector narrower than min_invalid_beams beams: all of its beams invalid is enough.
+  SafetyGateParams narrow = p;
+  narrow.sector_half_angle = 0.01;  // only the beam at 0
+  narrow.footprint_half_width = 0.0;
+  SafetyGate gate(narrow);
+  ASSERT_TRUE(feed(gate, Scan().span(0.0, 0.35, 0.30f), 0.0));
+  ASSERT_TRUE(feed(gate, Scan().at(0.0, kInf), 0.1));
+  gate.ingest_command(0.2, 0.0, 0.1);
+  EXPECT_EQ(gate.compute(0.1).state, GateState::kStopObstacle);
+}
+
+TEST(SafetyGate, ScatteredEmptyBinsDoNotBlockOrLatch)
+{
+  // rplidar_ros with angle_compensate publishes every empty 1-degree bin as +inf: at 7 Hz
+  // about every fourth bin. Box face 0.20 m wide, background at 3 m.
+  const auto scan = [](double d) {
+      Scan s;
+      for (int k = -25; k <= 25; ++k) {
+        const double a = k * kDeg;
+        const double r =
+          (k % 4 == 0) ? kInf : (std::abs(d * std::tan(a)) <= 0.10 ? d / std::cos(a) : 3.0);
+        s.at(a, static_cast<float>(r));
+      }
+      return s;
+    };
+  SafetyGate gate;
+  double t = 0.0;
+  for (int cm = 44; cm >= 25; --cm, t += 0.14) {  // approach from 0.44 m to 0.25 m
+    ASSERT_TRUE(feed(gate, scan(0.01 * cm), t));
+    gate.ingest_command(0.15, 0.0, t);
+    ASSERT_EQ(gate.compute(t).state, GateState::kSlow) << "d=" << 0.01 * cm;
+  }
+  for (int i = 0; i < 10; ++i, t += 0.14) {  // the box moved away to 1.5 m
+    ASSERT_TRUE(feed(gate, scan(1.5), t));
+    gate.ingest_command(0.15, 0.0, t);
+    ASSERT_EQ(gate.compute(t).state, GateState::kOk) << "i=" << i;
+  }
 }
 
 TEST(SafetyGate, InvalidReadingsWithoutRecentCloseReadingAreIgnored)
@@ -265,17 +357,18 @@ TEST(SafetyGate, CloseReadingMemoryExpiresAfterHalfASecond)
   ASSERT_TRUE(feed(gate, Scan().span(0.0, 0.35, 0.30f), 0.0));
   // A far reading does not refresh the memory; at t=0.5 the close reading is just recent enough.
   ASSERT_TRUE(feed(gate, Scan(), 0.3));
-  ASSERT_TRUE(feed(gate, Scan().at(0.0, kInf), SafetyGate::kCloseMemory));
+  ASSERT_TRUE(feed(gate, Scan().span(0.0, 0.35, kInf), SafetyGate::kCloseMemory));
   gate.ingest_command(0.2, 0.0, SafetyGate::kCloseMemory);
   EXPECT_EQ(gate.compute(SafetyGate::kCloseMemory).state, GateState::kStopObstacle);
 
   SafetyGate later;
   ASSERT_TRUE(feed(later, Scan().span(0.0, 0.35, 0.30f), 0.0));
   ASSERT_TRUE(feed(later, Scan(), 0.3));
-  ASSERT_TRUE(feed(later, Scan().at(0.0, kInf), 0.6));
+  ASSERT_TRUE(feed(later, Scan().span(0.0, 0.35, kInf), 0.6));
   later.ingest_command(0.2, 0.0, 0.6);
   const GateOutput out = later.compute(0.6);
   EXPECT_EQ(out.state, GateState::kOk);
+  EXPECT_FALSE(out.front_min.has_value());
   EXPECT_DOUBLE_EQ(out.v, 0.2);
 }
 
@@ -444,6 +537,9 @@ TEST(SafetyGate, ValidateRejectsInconsistentParameters)
   expect_invalid([](SafetyGateParams & p) {p.sector_half_angle = 4.0;});
   expect_invalid([](SafetyGateParams & p) {p.stop_distance = -0.1;});
   expect_invalid([](SafetyGateParams & p) {p.slow_distance = p.stop_distance;});
+  expect_invalid([](SafetyGateParams & p) {p.min_invalid_beams = 0;});
+  expect_invalid([](SafetyGateParams & p) {p.footprint_half_width = -0.01;});
+  expect_invalid([](SafetyGateParams & p) {p.footprint_half_width = std::nan("");});
   expect_invalid([](SafetyGateParams & p) {p.cmd_timeout = 0.0;});
   expect_invalid([](SafetyGateParams & p) {p.scan_timeout = -1.0;});
   expect_invalid([](SafetyGateParams & p) {p.max_linear = 0.0;});

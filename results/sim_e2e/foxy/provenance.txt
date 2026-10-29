@@ -1,0 +1,14 @@
+report: 2026-10-29T02:03:40Z
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 50 paths
+image: mirror.gcr.io/library/ros@sha256:34fbe32f5b1cd3eb25f6becaaa1d293bad754d64c31d96e638e4b30ed82f9f8e
+policy.onnx sha256: 7cfb1cbb09dc074bec4888d9c604e57544c6dd700c93171615a767f89783bbc7
+onnxruntime 1.10.0 ['CPUExecutionProvider']
+
+stage: servo (2026-10-29T01:52:50Z)
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 42 paths
+
+stage: bc (2026-10-29T01:57:40Z)
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 46 paths

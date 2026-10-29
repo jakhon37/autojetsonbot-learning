@@ -9,12 +9,16 @@
 #                the box squarely
 #   heading_deg  robot heading relative to facing the face squarely (perpendicular to it);
 #                positive = turned left (counter-clockwise)
-# Ranges: distance 0.80-1.60 m, |lateral| <= 0.50 m, |heading| <= 40 deg. The front bumper is
-# about 0.097 m ahead of base_link, so it starts 0.70-1.50 m from the box.
+# Ranges: distance 0.80-1.60 m, |lateral| <= 0.50 m, |heading| <= 40 deg. In fake_robot the
+# front bumper is 0.097 m ahead of base_link, so it starts 0.70-1.50 m from the box (the URDF
+# puts the real bumper about 0.158 m ahead of base_link).
 #
-# What the camera (HFOV 80 deg, so +-40 deg) sees at the start. "bearing" is the marker centre's
-# angle from the optical axis, positive = left; "turn" is the in-place rotation after which the
-# marker is fully in view and detected (measured in the simulator, test_sim_world.py checks it).
+# What the simulator's camera (HFOV 80 deg, so +-40 deg) sees at the start. "bearing" is the
+# marker centre's angle from the optical axis, positive = left; "turn" is the in-place rotation
+# after which the marker is fully in view and detected (measured in the simulator,
+# test_sim_world.py checks it). The bearings are geometry and hold on the robot too, but its
+# stock Pi Camera v2 lens is 62.2 deg (+-31 deg): there poses 5-9 start with the marker out of
+# view (pose 8 included).
 # World pose is for fake_robot's default box (front face centre at (1.5, 0), facing -x).
 #
 #   id  dist  lateral  heading | world x, y, yaw      | bearing | start view

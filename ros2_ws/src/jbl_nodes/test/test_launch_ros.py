@@ -210,6 +210,10 @@ def test_robot_policy_constant_backend_drives_through_the_gate(probe, launches, 
     )
     assert probe.wait_for_nodes(ROBOT_NODES | {"policy_runner"}), launch.output()
     assert probe.spin_until(lambda: len(frames) >= 5, 10.0), "no frames from the test pattern"
+    # config/robot.yaml: the Pi Camera v2 lens and its Argus pipeline (a string on every distro).
+    assert _param(probe, "dock_judge", "hfov_rad") == (ParameterType.PARAMETER_DOUBLE, 1.0856)
+    device_type, device = _param(probe, "camera_node", "device")
+    assert device_type == ParameterType.PARAMETER_STRING and device.startswith("nvarguscamerasrc")
 
     events = probe.node.create_publisher(String, EVENT_TOPIC, event_qos())
     events.publish(String(data="start bc 0 1"))

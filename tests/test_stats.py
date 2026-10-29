@@ -113,6 +113,37 @@ def test_discordant_counts():
         stats.discordant_counts([1, 2], [1, 0])
 
 
+def test_newcombe_paired_diff_matches_the_published_example():
+    # Newcombe (1998), Statistics in Medicine 17:2635, worked example (a, b, c, d) = (36, 12, 2, 0)
+    # with the first rate (a + b) / n: method 10 gives 0.0569 to 0.3404. Here b counts pairs
+    # where only the baseline succeeded, so the table is (both, b=2, c=12, both fail).
+    r = stats.newcombe_paired_diff(stats.PairedTable(36, 2, 12, 0))
+    assert r.estimate == pytest.approx(0.2)
+    assert (r.low, r.high) == (pytest.approx(0.0569, abs=5e-5), pytest.approx(0.3404, abs=5e-5))
+    assert (r.n_pairs, r.n_boot, r.confidence) == (50, 0, 0.95)
+    # Swapping method and baseline mirrors the interval.
+    m = stats.newcombe_paired_diff(stats.PairedTable(36, 12, 2, 0))
+    assert (m.estimate, m.low, m.high) == pytest.approx((-0.2, -0.3404, -0.0569), abs=5e-5)
+
+
+def test_newcombe_paired_diff_without_discordant_pairs_is_not_a_point():
+    # 10/10 vs 10/10: the bootstrap collapses to 0 to 0; the score interval is about +-28 pp,
+    # the width the two Wilson intervals allow, in line with McNemar p = 1.
+    for table in (stats.PairedTable(10, 0, 0, 0), stats.PairedTable(0, 0, 0, 10)):
+        r = stats.newcombe_paired_diff(table)
+        lo, hi = stats.wilson_interval(10, 10)
+        assert r.estimate == 0.0
+        assert (r.low, r.high) == (pytest.approx(-(hi - lo)), pytest.approx(hi - lo))
+        assert (round(r.low, 3), round(r.high, 3)) == (-0.278, 0.278)
+    # Few discordant pairs, all one way: the CI excludes 0 only when McNemar is significant.
+    for c, significant in ((3, False), (8, True)):
+        r = stats.newcombe_paired_diff(stats.PairedTable(20, 0, c, 10))
+        assert (r.low > 0) == significant == (stats.mcnemar_exact(0, c).p_exact < 0.05)
+    assert stats.newcombe_paired_diff(stats.PairedTable(0, 10, 0, 0)).low == -1.0
+    with pytest.raises(ValueError):
+        stats.newcombe_paired_diff(stats.PairedTable(0, 0, 0, 0))
+
+
 def test_paired_bootstrap_is_deterministic_and_centred():
     rng = np.random.default_rng(1)
     y = rng.integers(0, 2, 30)

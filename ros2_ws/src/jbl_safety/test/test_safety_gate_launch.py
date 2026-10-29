@@ -49,6 +49,8 @@ INTERFACE_DEFAULTS = {
     'stop_distance': 0.17,
     'slow_distance': 0.45,
     'treat_invalid_as_close': True,
+    'min_invalid_beams': 3,
+    'footprint_half_width': 0.15,
     'cmd_timeout': 0.3,
     'scan_timeout': 0.5,
     'max_linear': 0.25,
@@ -244,6 +246,10 @@ class TestSafetyGate(unittest.TestCase):
         d = self.driver
         d.front, d.cmd = 2.0, (0.1, 0.0)
         self.assertTrue(d.converge(0.1, 0.0))
+        # The gate outlives each test's scan publisher, so statuses from the gap before this
+        # test's scans arrived (front_min_m null, correctly) can still be queued. Wait for a
+        # fresh 'ok' status before collecting.
+        self.wait_for_state('ok')
         d.statuses.clear()
         start = time.monotonic()
         d.run(3.0)
@@ -283,6 +289,9 @@ class TestSafetyGate(unittest.TestCase):
             if isinstance(expected, bool):
                 self.assertEqual(value.type, ParameterType.PARAMETER_BOOL, name)
                 self.assertEqual(value.bool_value, expected, name)
+            elif isinstance(expected, int):
+                self.assertEqual(value.type, ParameterType.PARAMETER_INTEGER, name)
+                self.assertEqual(value.integer_value, expected, name)
             else:
                 self.assertEqual(value.type, ParameterType.PARAMETER_DOUBLE, name)
                 self.assertAlmostEqual(value.double_value, expected, msg=name)
@@ -294,19 +303,17 @@ class TestSafetyGate(unittest.TestCase):
         result = self.call(set_client, SetParameters.Request(parameters=[change])).results[0]
         self.assertFalse(result.successful)
 
-    def test_zero_twist_published_on_shutdown(self):
+    def check_zero_twist_on_signal(self, signum, namespace):
         # A second gate in its own namespace, so it can be stopped without touching the
         # launched one. Its topics move with the namespace, which also covers remapping.
-        probe = subprocess.Popen([gate_executable(), '--ros-args', '-r', '__ns:=/probe'])
+        probe = subprocess.Popen([gate_executable(), '--ros-args', '-r', '__ns:=' + namespace])
         try:
-            d = GateDriver(self.node, namespace='/probe')
+            d = GateDriver(self.node, namespace=namespace)
             d.front, d.cmd = 2.0, (0.2, 0.4)
             self.assertTrue(d.converge(0.2, 0.4), f'probe never forwarded: {d.latest()}')
 
-            # The launched gate is stopped with SIGINT by launch; use SIGTERM here (docker stop,
-            # systemd) to cover the other handled signal.
             interrupted = time.monotonic()
-            probe.send_signal(signal.SIGTERM)
+            probe.send_signal(signum)
             d.run(10.0, until=lambda: probe.poll() is not None)
             self.assertEqual(probe.wait(timeout=5.0), 0)
             d.cmd = None
@@ -314,11 +321,19 @@ class TestSafetyGate(unittest.TestCase):
             self.assertTrue(is_twist(d.latest(), 0.0, 0.0), f'last output {d.latest()}')
             self.assertTrue(
                 any(is_twist(s, 0.0, 0.0) for s in d.outputs_since(interrupted)),
-                'no zero twist after SIGTERM')
+                f'no zero twist after signal {signum}')
         finally:
             if probe.poll() is None:
                 probe.kill()
                 probe.wait()
+
+    def test_zero_twist_published_on_sigterm(self):
+        # The launched gate is stopped with SIGINT by launch; SIGTERM is docker stop / systemd.
+        self.check_zero_twist_on_signal(signal.SIGTERM, '/probe_term')
+
+    def test_zero_twist_published_on_sighup(self):
+        # A closed terminal, a killed tmux pane or a dropped ssh session.
+        self.check_zero_twist_on_signal(signal.SIGHUP, '/probe_hup')
 
     def test_refuses_to_start_with_inconsistent_parameters(self):
         result = subprocess.run(

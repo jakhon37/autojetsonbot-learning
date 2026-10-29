@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Behaviour-cloning baseline: ResNet18 on the front camera -> normalised (v, w) command.
 
-    python tools/train_bc.py --root data/jbl_dock --repo-id jakhon37/jbl_dock --out runs/bc --pretrained
+    python tools/train_bc.py --root data/jbl_dock --repo-id jakhon37/jbl_dock --out runs/bc --pretrained \
+        --methods teleop --outcomes success --split-by pose_id
     python tools/export_onnx.py runs/bc/model.pt --dataset-root data/jbl_dock
+
+Use the filters: without --methods / --outcomes, failed demos and policy or baseline rollouts
+(including any on the held-out test poses) are trained on; without --split-by pose_id,
+validation holds repeats of training start spots.
 
 Inputs are prepared exactly as on the robot: the 240x320 RGB dataset frame goes through
 jbl_nodes.preprocess.to_model_input (squash to 224x224, ImageNet mean/std). Targets are
@@ -141,6 +146,18 @@ class Augment:
         return np.ascontiguousarray(out), flipped
 
 
+def frame_rgb_uint8(img: torch.Tensor) -> np.ndarray:
+    """LeRobot CHW frame -> HxWx3 uint8 RGB, whatever the dataset's frame storage.
+
+    Video frames arrive as uint8 (return_uint8=True); image-stored frames (bag_to_lerobot
+    --video off) arrive as float32 in [0, 1] whatever return_uint8 says. Both must reach
+    preprocess.to_model_input as the uint8 frame the robot sees.
+    """
+    if img.dtype != torch.uint8:
+        img = (img.float() * 255.0).round().clamp(0, 255).to(torch.uint8)
+    return img.permute(1, 2, 0).numpy()
+
+
 class BCFrames(torch.utils.data.Dataset):
     """LeRobotDataset (return_uint8=True) -> (model input, normalised state, normalised action)."""
 
@@ -165,7 +182,7 @@ class BCFrames(torch.utils.data.Dataset):
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         item = self.frames[index]
-        rgb = item[IMAGE_KEY].permute(1, 2, 0).numpy()
+        rgb = frame_rgb_uint8(item[IMAGE_KEY])
         v, w = (float(x) for x in item[ACTION_KEY])
         sv, sw = (float(x) for x in item[STATE_KEY])
         if self.augment is not None:
@@ -405,6 +422,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     info = json.loads((args.root / "meta" / "info.json").read_text())
     records = jbl_episodes.load_episode_table(args.root, total_episodes=info["total_episodes"])
     records = jbl_episodes.filter_episodes(records, outcomes=args.outcomes, methods=args.methods)
+    methods = sorted({str(r.get("method")) for r in records})
+    if args.methods is None and len(methods) > 1:
+        print("train_bc: warning: no --methods filter; training on every method in the dataset (%s), "
+              "including any policy or baseline rollouts" % ", ".join(methods), file=sys.stderr)
+    if args.split_by is None and any(r.get("pose_id") is not None for r in records):
+        print("train_bc: warning: no --split-by; validation may hold repeats of training start spots "
+              "(use --split-by pose_id)", file=sys.stderr)
     train_eps, val_eps = jbl_episodes.split_episodes(records, args.val_fraction, args.seed, args.split_by)
     if not train_eps:
         raise SystemExit("no training episodes (check --outcomes / --methods)")

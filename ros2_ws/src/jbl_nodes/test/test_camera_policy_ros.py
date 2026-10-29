@@ -33,6 +33,7 @@ from jbl_nodes.episode_cli import (  # noqa: E402
     format_episode_event,
     parse_episode_event,
 )
+from jbl_nodes.judge_logic import is_intervention  # noqa: E402
 from jbl_nodes.policy_runner import PolicyRunner  # noqa: E402
 
 CONSTANT = [0.4, -0.2]
@@ -154,6 +155,11 @@ def test_episode_event_text_round_trip():
     assert (end.kind, end.outcome, end.reason) == ("end", "fail", "timeout after 30 s")
     assert format_episode_event(end) == "end fail timeout after 30 s"
     assert format_episode_event(parse_episode_event("end success")) == "end success"
+    note = parse_episode_event("intervention  lifted it\tbefore the wall")
+    assert note == EpisodeEvent("intervention", reason="lifted it before the wall")
+    assert format_episode_event(note) == "intervention lifted it before the wall"
+    assert is_intervention(format_episode_event(note))  # what dock_judge and trial_logger match
+    assert format_episode_event(parse_episode_event("intervention")) == "intervention"
     for bad in ("", "begin bc 1 1", "start bc 1", "start bc x 1", "start bc 1 -1", "end maybe", "end"):
         with pytest.raises(ValueError):
             parse_episode_event(bad)
@@ -277,6 +283,15 @@ def test_policy_runner_follows_episode_events(graph):
     graph.spin_for(0.5)
     assert len(cmds) == n_end, "a disabled runner must not publish"
 
+    # An operator intervention stops it too, before the judge's "end fail intervention".
+    events.publish(String(data="start bc 2 1"))
+    assert graph.spin_until(lambda: is_constant(cmds[-1]), timeout=3.0)
+    events.publish(String(data="intervention lifted it"))
+    assert graph.spin_until(lambda: is_zero(cmds[-1]), timeout=2.0)
+    n_end = len(cmds)
+    graph.spin_for(0.5)
+    assert len(cmds) == n_end, "a runner stopped by an intervention must not publish"
+
 
 def test_policy_runner_zeroes_stale_future_and_missing_images(graph):
     cmds = graph.record(Twist, "/cmd_vel_in")
@@ -396,12 +411,17 @@ def test_episode_cli_publishes_once_and_exits(graph):
     assert graph.spin_until(lambda: len(events) == 2, timeout=1.0)
     assert events[1][0].data == "end fail timeout after 30 s"
 
+    code, out, err = _run_cli(graph, "--timeout", "8", "intervention", "lifted", "it  off")
+    assert code == 0, err
+    assert graph.spin_until(lambda: len(events) == 3, timeout=1.0)
+    assert events[2][0].data == "intervention lifted it off"
+
     code, _, err = _run_cli(graph, "start", "bc", "three", "1")
     assert code == 2 and "pose_id" in err
     code, _, err = _run_cli(graph, "end", "abort", "--timeout", "3")
     assert code == 2 and "options go before" in err
     graph.spin_for(0.2)
-    assert len(events) == 2
+    assert len(events) == 3
 
 
 def test_episode_cli_reports_when_nobody_listens(graph):

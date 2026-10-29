@@ -38,7 +38,7 @@ def episode_windows(bag):
     return windows
 
 
-def expected_ticks(bag, start_ns, end_ns, fps=FPS, timeout_s=0.3):
+def expected_ticks(bag, start_ns, end_ns, fps=FPS, timeout_s=0.3, keep_idle_start=False):
     """[(T, image index, state, action)] by direct lookup in the recorded message lists."""
     img_t = np.array([t for t, _ in bag.images], dtype=np.int64)
     odom_t = np.array([t for t, _, _ in bag.odom], dtype=np.int64)
@@ -56,6 +56,8 @@ def expected_ticks(bag, start_ns, end_ns, fps=FPS, timeout_s=0.3):
         state = bag.odom[o][1:] if o >= 0 else (0.0, 0.0)
         fresh = c >= 0 and T - cmd_t[c] <= int(timeout_s * S)
         action = bag.cmd[c][1:] if fresh else (0.0, 0.0)
+        if not keep_idle_start and not out and not any(action):
+            continue
         out.append((T, bag.images[i][1], state, action))
     return out
 
@@ -76,6 +78,7 @@ def test_parse_event():
     assert b2l.parse_event("end fail pushed into  wall") == b2l.EpisodeEvent(
         "end", outcome="fail", reason="pushed into wall")
     assert b2l.parse_event(" end success ").outcome == "success"
+    assert b2l.parse_event("intervention lifted it") == b2l.EpisodeEvent("intervention", reason="lifted it")
     for bad in ("", "hello", "start teleop 3", "start teleop x 1", "start teleop -1 0", "end", "end maybe"):
         with pytest.raises(ValueError):
             b2l.parse_event(bad)
@@ -83,6 +86,7 @@ def test_parse_event():
 
 def _run(messages, **kwargs):
     warnings = []
+    kwargs.setdefault("keep_idle_start", True)
     items = list(b2l.resample(messages, warn=warnings.append, **kwargs))
     ticks = [x for x in items if isinstance(x, b2l.Tick)]
     ended = [x.episode for x in items if isinstance(x, b2l.EpisodeEnded)]
@@ -117,6 +121,22 @@ def test_resample_tick_rules():
     assert ticks[-1].t_ns == 700 * ms and ticks[-1].action == (0.0, 0.0)  # command 0.4 s old
 
 
+def test_resample_drops_idle_start():
+    M = b2l.Msg
+    ms = 1_000_000
+    messages = [M("event", 0, "start teleop 1 0")]
+    messages += [M("image", t * ms, t) for t in range(0, 3000, 50)]
+    messages += [M("cmd", t * ms, (0.1, 0.0)) for t in range(1520, 2500, 40)]  # operator reacts at 1.52 s
+    messages += [M("event", 3000 * ms, "end success")]
+    messages.sort(key=lambda m: (m.t_ns, m.kind != "event"))
+    ticks, ended, _ = _run(messages, fps=10, keep_idle_start=False)
+    assert ticks[0].t_ns == 1600 * ms and ticks[0].action == (0.1, 0.0)
+    assert ticks[-1].t_ns == 2900 * ms and ticks[-1].action == (0.0, 0.0)  # the stop at the end stays
+    assert ended[0].idle_start_ticks == 16 and ended[0].num_frames == 14
+    kept, ended, _ = _run(messages, fps=10)
+    assert len(kept) == 30 and ended[0].idle_start_ticks == 0
+
+
 def test_resample_episode_events():
     M = b2l.Msg
     ms = 1_000_000
@@ -127,6 +147,7 @@ def test_resample_episode_events():
         M("event", 500 * ms, "end success"),
         M("event", 600 * ms, "start bc 2 1"),
         M("event", 900 * ms, "start bc 3 1"),  # supersedes the open episode
+        M("event", 950 * ms, "intervention lifted it"),  # not a boundary, not a warning
         M("event", 1000 * ms, "what"),
         M("event", 1300 * ms, "end fail timeout"),
         M("event", 1400 * ms, "start servo 4 2"),  # never ended
@@ -254,7 +275,7 @@ def test_frames_follow_the_tick_rules(converted, synthetic_bags):
         duration_s = (window[1] - window[0]) / 1e9
         first_image_delay = min(t for t, _ in bag.images if t >= window[0]) - window[0]
         assert len(frames) == len(expected) == record["num_frames"]
-        assert abs(len(frames) - (duration_s - first_image_delay / 1e9) * FPS) <= 1.0
+        assert abs(len(frames) - (duration_s - first_image_delay / 1e9 - record["idle_start_s"]) * FPS) <= 1.0
         for frame, (T, image_index, state, action) in zip(frames, expected):
             rgb = frame[b2l.IMAGE_KEY].permute(1, 2, 0).numpy()
             assert msb.decode_index(rgb) == image_index, (record["bag"], T)
@@ -290,9 +311,10 @@ def test_command_gaps_and_late_start_give_zero_action(converted, synthetic_bags)
         elif t < 5.95 or t > 7.05:
             assert a.any(), t
     assert checked == 6  # ticks 6.4 ... 6.9
-    # foxy_teleop: the operator starts commanding at 1.0 s.
-    for t, a in actions_by_time(rows[("foxy_teleop", None)]):
-        assert a.any() == (t >= 1.0), t
+    # foxy_teleop: the operator starts commanding at 1.0 s; the idle start is dropped.
+    teleop = actions_by_time(rows[("foxy_teleop", None)])
+    assert 1.0 <= teleop[0][0] < 1.1 and teleop[0][1].any()
+    assert rows[("foxy_teleop", None)]["idle_start_s"] > 0
 
 
 def test_colour_order_is_rgb(converted):
@@ -371,7 +393,7 @@ def test_cli(synthetic_bags, tmp_path):
         capture_output=True, text=True, timeout=300,
     )
     assert proc.returncode == 0, proc.stderr
-    assert "1 episodes, 15 frames at 10 fps" in proc.stdout
+    assert "1 episodes, 14 frames at 10 fps" in proc.stdout
     proc = subprocess.run([sys.executable, str(TOOLS / "jbl_episodes.py"), "--root", str(root), "--split"],
                           capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr

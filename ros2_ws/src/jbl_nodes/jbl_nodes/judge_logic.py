@@ -102,8 +102,8 @@ class JudgeConfig(NamedTuple):
     bearing_tol_deg: float = 10.0
     hold_s: float = 1.0
     timeout_s: float = 30.0
-    stopped_v: float = 0.02  # m/s, |odom v| at or below counts as stopped
-    stopped_w: float = 0.05  # rad/s
+    stopped_v: float = 0.02  # m/s, |odom v| and |requested v| at or below count as stopped
+    stopped_w: float = 0.05  # rad/s, the same for w
     obstacle_fail_s: float = 2.0  # gate in stop_obstacle for longer than this, while not aligned
 
 
@@ -138,7 +138,9 @@ class DockJudge(object):
     part of a hold that happened after its start.
 
     Within an episode, the first of these to happen decides it (ties go to success):
-      success  in_band, aligned and stopped continuously for hold_s
+      success  in_band, aligned and stopped continuously for hold_s; stopped means odometry
+               and the controller's latest fresh request (/cmd_vel_in) are both still, so a
+               robot that only the gate's slow zone has slowed below stopped_v does not count
       fail     timeout_s since the start
       fail     gate state stop_obstacle for more than obstacle_fail_s while not aligned
       fail     an operator intervention
@@ -200,8 +202,13 @@ class DockJudge(object):
         v: Optional[float],
         w: Optional[float],
         gate_state: Optional[str],
+        cmd: Optional[Tuple[float, float]] = None,
     ) -> Optional[Verdict]:
-        """Feed one sample; returns the verdict on the tick that decides an episode, else None."""
+        """Feed one sample; returns the verdict on the tick that decides an episode, else None.
+
+        cmd is the controller's latest fresh request (/cmd_vel_in v, w), None when there is none
+        (the gate then outputs zero, so none counts as still).
+        """
         cfg = self._cfg
         if self._last_t is not None and now < self._last_t:
             # The clock jumped back (sim time restarted): durations measured so far are void.
@@ -218,7 +225,11 @@ class DockJudge(object):
         self._in_band = front_range_m is not None and cfg.band_min <= front_range_m <= cfg.band_max
         self._aligned = marker is not None and abs(marker.bearing_deg) <= cfg.bearing_tol_deg
         self._stopped = (
-            v is not None and w is not None and abs(v) <= cfg.stopped_v and abs(w) <= cfg.stopped_w
+            v is not None
+            and w is not None
+            and abs(v) <= cfg.stopped_v
+            and abs(w) <= cfg.stopped_w
+            and (cmd is None or (abs(cmd[0]) <= cfg.stopped_v and abs(cmd[1]) <= cfg.stopped_w))
         )
 
         if self._in_band and self._aligned and self._stopped:
@@ -317,8 +328,10 @@ def servo_command(
     Marker visible: w = k_w * bearing (left of centre -> positive yaw, turning towards it),
     zero inside the deadband; v = clip(k_v * (range - target), 0, v_max), scaled by
     (1 - |bearing| / slow_bearing_deg) so the robot turns before it drives, and zero once the
-    range is at or below target + range_tol (never reverses). So in band and aligned means
-    (0, 0). Marker not visible: rotate in place at search_w.
+    range is at or below target + range_tol (never reverses). So (0, 0) needs the range at or
+    below target + range_tol and the bearing inside the deadband, not just anywhere in the
+    judge's band: above target + range_tol it still creeps forward at k_v * (range - target).
+    Marker not visible: rotate in place at search_w.
     """
     p = params
     if bearing_deg is None:

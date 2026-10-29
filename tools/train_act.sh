@@ -4,7 +4,10 @@
 #   DATASET_ROOT=data/jbl_dock REPO_ID=jakhon37/jbl_dock OUT=runs/act bash tools/train_act.sh
 #   DATASET_ROOT=... bash tools/train_act.sh --policy.kl_weight=5      # extra args go to lerobot-train
 #
-# Same episodes as a BC run (fair comparison):
+# By default it trains on the same episodes as train_bc's recommended run (README): successful
+# teleop demos, split by pose_id with validation fraction 0.2 and seed 0 (the validation part is
+# left out). Failed demos and policy or baseline rollouts (trial bags, possibly on the held-out
+# test poses) are never trained on unless asked for. To use a BC run's exact split:
 #   EPISODES=$(python -c 'import json; print(json.load(open("runs/bc/split.json"))["train"])') \
 #   DATASET_ROOT=... bash tools/train_act.sh
 #
@@ -17,7 +20,12 @@
 #   CHUNK           actions predicted per inference [10 = 1 s at 10 fps]
 #   N_ACTION_STEPS  actions executed per inference at rollout [1]: policy_runner asks for one
 #                   command per 0.1 s tick, i.e. receding horizon on the first action of each chunk
-#   EPISODES        JSON list of training episode indices [all]
+#   EPISODES        JSON list of training episode indices, or "all" for every episode in the
+#                   dataset [the train part of the split below]
+#   METHODS [teleop]  OUTCOMES [success]  VAL_FRACTION [0.2]  SPLIT_SEED [0]
+#                   the default episode selection: jbl_episodes.py --methods --outcomes --split
+#                   --split-by pose_id (comma lists; "none" matches episodes without a value)
+#   PYTHON          interpreter for jbl_episodes.py [python3]
 #   BACKBONE        imagenet | none [imagenet]: ImageNet ResNet18 weights are downloaded once from
 #                   download.pytorch.org into $TORCH_HOME; "none" trains from scratch, offline
 #   AMP             1 to use mixed precision on CUDA [0]
@@ -61,7 +69,18 @@ case "$BACKBONE" in
   none) extra+=(--policy.pretrained_backbone_weights=null) ;;
   *) echo "train_act.sh: BACKBONE must be imagenet or none, got '$BACKBONE'" >&2; exit 2 ;;
 esac
-[ -n "${EPISODES:-}" ] && extra+=("--dataset.episodes=$EPISODES")
+if [ -z "${EPISODES:-}" ]; then
+  if ! EPISODES=$("${PYTHON:-python3}" "$(dirname "$0")/jbl_episodes.py" --root "$DATASET_ROOT" \
+      --methods "${METHODS:-teleop}" --outcomes "${OUTCOMES:-success}" --split --split-by pose_id \
+      --val-fraction "${VAL_FRACTION:-0.2}" --seed "${SPLIT_SEED:-0}" \
+      | "${PYTHON:-python3}" -c 'import json, sys; t = json.load(sys.stdin)["train"]; print(t) if t else sys.exit(1)'); then
+    echo "train_act.sh: no training episodes match METHODS=${METHODS:-teleop} OUTCOMES=${OUTCOMES:-success}" \
+      "in $DATASET_ROOT (set EPISODES=all to train on every episode)" >&2
+    exit 2
+  fi
+  echo "train_act.sh: training episodes $EPISODES (methods ${METHODS:-teleop}, outcomes ${OUTCOMES:-success})" >&2
+fi
+[ "$EPISODES" != all ] && extra+=("--dataset.episodes=$EPISODES")
 [ "$AMP" = 1 ] && extra+=(--policy.use_amp=true)
 
 set -x

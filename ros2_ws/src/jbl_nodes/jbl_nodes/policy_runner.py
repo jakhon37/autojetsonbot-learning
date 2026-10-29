@@ -3,7 +3,8 @@
 Subscribes
     image_topic       CompressedImage if the name ends in "/compressed", else Image
                       (bgr8/rgb8/mono8); depth 1, decoded only when used
-    /episode/event    reliable + transient_local: "start ..." enables, "end ..." disables
+    /episode/event    reliable + transient_local: "start ..." enables, "end ..." or
+                      "intervention ..." disables
 Publishes
     /cmd_vel_in       geometry_msgs/Twist every tick while enabled; nothing while disabled,
                       so teleop or the baseline can own the topic

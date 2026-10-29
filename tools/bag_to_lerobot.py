@@ -17,8 +17,13 @@ at t1, tick k is at T = t0 + k / fps for T < t1, and
     state   the latest /odom twist (v, w) at or before T, zero before the first odometry
     action  the latest /cmd_vel_in (v, w) at or before T, zero if older than --cmd-timeout
 
+Leading ticks whose action is zero (the robot standing at the start pose while the operator
+gets to the teleop terminal) are dropped unless --keep-idle-start: a memoryless policy would
+otherwise learn "stand still" for the start views. Their length is recorded as idle_start_s.
+
 Episodes come from /episode/event ("start <method> <pose_id> <round>" ... "end <outcome>
-[reason]") when the bag has events, else the whole bag is one episode. A start without an end is
+[reason]"; "intervention [note]" events are skipped) when the bag has events, else the whole
+bag is one episode. A start without an end is
 treated as an abort. Aborted episodes are dropped unless --keep-abort. Per-episode metadata is
 written to meta/jbl_episodes.jsonl (see jbl_episodes.py).
 
@@ -92,7 +97,7 @@ def dataset_features(use_video: bool) -> dict[str, dict[str, Any]]:
 
 
 class EpisodeEvent(NamedTuple):
-    kind: str  # "start" or "end"
+    kind: str  # "start", "end" or "intervention"
     method: str | None = None
     pose_id: int | None = None
     round: int | None = None
@@ -120,7 +125,9 @@ def parse_event(text: str) -> EpisodeEvent:
         if not rest or rest[0] not in OUTCOMES:
             raise ValueError("end takes <%s> [reason]" % "|".join(OUTCOMES))
         return EpisodeEvent("end", outcome=rest[0], reason=" ".join(rest[1:]))
-    raise ValueError("event kind must be start or end, got %r" % kind)
+    if kind == "intervention":  # an operator note; dock_judge ends the episode with "end fail ..."
+        return EpisodeEvent("intervention", reason=" ".join(rest))
+    raise ValueError("event kind must be start, end or intervention, got %r" % kind)
 
 
 # --------------------------------------------------------------------------------------------
@@ -144,6 +151,7 @@ class Episode:
     reason: str = ""
     num_frames: int = 0
     max_image_age_ns: int = 0
+    idle_start_ticks: int = 0  # leading zero-action ticks dropped (see keep_idle_start)
 
 
 class Tick(NamedTuple):
@@ -176,6 +184,7 @@ def resample(
     cmd_timeout_s: float = CMD_TIMEOUT_S,
     whole_bag: tuple[int, int] | None = None,
     warn: Callable[[str], None] = log.warning,
+    keep_idle_start: bool = False,
 ) -> Iterator[ResampleEvent]:
     """Stream of messages in log-time order -> episode starts, ticks and ends.
 
@@ -206,6 +215,9 @@ def resample(
             state = (odom[1], odom[2]) if odom is not None else (0.0, 0.0)
             fresh = cmd is not None and T - cmd[0] <= cmd_timeout_ns
             action = (cmd[1], cmd[2]) if fresh else (0.0, 0.0)
+            if not keep_idle_start and episode.num_frames == 0 and action == (0.0, 0.0):
+                episode.idle_start_ticks += 1
+                continue
             episode.num_frames += 1
             episode.max_image_age_ns = max(episode.max_image_age_ns, T - image[0])
             yield Tick(T, image[1], image[0], state, action)
@@ -242,6 +254,8 @@ def resample(
             except ValueError as exc:
                 warn("ignoring malformed %s %r at %d: %s" % (EVENT_TOPIC, msg.value, msg.t_ns, exc))
                 continue
+            if event.kind == "intervention":
+                continue  # not a boundary: the end event that follows decides the outcome
             if event.kind == "start":
                 if episode is not None:
                     yield close(msg.t_ns, "abort", "no end event before the next start")
@@ -431,6 +445,7 @@ def episode_record(episode: Episode, bag_name: str, fps: int) -> dict[str, Any]:
         "num_frames": episode.num_frames,
         "start_time_ns": episode.start_ns,
         "max_image_age_s": round(episode.max_image_age_ns / 1e9, 3),
+        "idle_start_s": round(episode.idle_start_ticks / fps, 3),
     }
 
 
@@ -459,6 +474,7 @@ def convert(
     task: str = TASK,
     overwrite: bool = False,
     image_writer_threads: int = 4,
+    keep_idle_start: bool = False,
 ) -> ConversionReport:
     """Write every kept episode of ``bags`` (from find_bags) to a new dataset at ``root``."""
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -491,7 +507,8 @@ def convert(
     try:
         for bag_path, bag_name in bags:
             _convert_bag(dataset, bag_path, bag_name, report, warn, fps=fps, cmd_timeout_s=cmd_timeout_s,
-                         keep_abort=keep_abort, typestore=typestore, image_topic=image_topic, task=task)
+                         keep_abort=keep_abort, typestore=typestore, image_topic=image_topic, task=task,
+                         keep_idle_start=keep_idle_start)
         dataset.finalize()
         if not report.episodes:
             raise RuntimeError("no episode was kept; nothing to write (see warnings above)")
@@ -520,6 +537,7 @@ def _convert_bag(
     typestore: str,
     image_topic: str | None,
     task: str,
+    keep_idle_start: bool = False,
 ) -> None:
     t_start = time.monotonic()
     kept = dropped = 0
@@ -532,7 +550,7 @@ def _convert_bag(
         last_payload: Any = None
         last_frame: np.ndarray | None = None
         for item in resample(bag.messages(), fps, cmd_timeout_s, whole_bag,
-                             warn=lambda text: warn("%s: %s" % (bag_name, text))):
+                             warn=lambda text: warn("%s: %s" % (bag_name, text)), keep_idle_start=keep_idle_start):
             if isinstance(item, Tick):
                 if item.image is not last_payload:
                     try:
@@ -552,7 +570,8 @@ def _convert_bag(
                 record = episode_record(episode, bag_name, fps)
                 reason = None
                 if episode.num_frames == 0:
-                    reason = "no camera frame inside the episode"
+                    reason = ("no non-zero command in the episode" if episode.idle_start_ticks
+                              else "no camera frame inside the episode")
                 elif episode.outcome == "abort" and not keep_abort:
                     reason = "outcome abort (%s)" % (episode.reason or "no reason given")
                 if reason is None:
@@ -582,6 +601,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--cmd-timeout", type=float, default=CMD_TIMEOUT_S, metavar="S",
                         help="action is zero when the latest command is older (default %(default)s s)")
     parser.add_argument("--keep-abort", action="store_true", help="keep aborted and unterminated episodes")
+    parser.add_argument("--keep-idle-start", action="store_true",
+                        help="keep the zero-action ticks before an episode's first command")
     parser.add_argument("--video", choices=("auto", "on", "off"), default="auto",
                         help="store frames as video (auto: when PyAV can encode), else PNG images")
     parser.add_argument("--vcodec", default=None, help="video codec (default: LeRobot's, libsvtav1)")
@@ -606,7 +627,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = convert(bags, args.root, args.repo_id, fps=args.fps, cmd_timeout_s=args.cmd_timeout,
                      keep_abort=args.keep_abort, video=args.video, vcodec=args.vcodec,
                      typestore=args.typestore, image_topic=args.image_topic, task=args.task,
-                     overwrite=args.overwrite, image_writer_threads=args.image_writer_threads)
+                     overwrite=args.overwrite, image_writer_threads=args.image_writer_threads,
+                     keep_idle_start=args.keep_idle_start)
     print("wrote %s: %d episodes, %d frames at %d fps, %s; %d episode(s) dropped, %d warning(s)" % (
         report.root, len(report.episodes), report.num_frames, args.fps, report.storage,
         len(report.dropped), len(report.warnings)))

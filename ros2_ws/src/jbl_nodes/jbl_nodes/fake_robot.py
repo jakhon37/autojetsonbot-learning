@@ -30,6 +30,9 @@ Parameters (defaults)
     box_x, box_y        1.5, 0.0   centre of the box front face on the floor (world, m)
     box_yaw             pi  direction the front face (marker) looks; the room is 4 x 3 m
                             centred on the origin
+    camera_hfov_rad 1.396   horizontal field of view of the simulated camera (sim_world.CameraConfig;
+                            the robot's stock Pi Camera v2 lens is 1.0856); config/sim.yaml sets
+                            it next to the hfov_rad the judge and the servo assume
     rate_hz 50.0   scan_rate 10.0   camera_fps 10.0   ground_truth_rate 10.0   (0 disables a topic)
     jpeg_quality 85     cmd_timeout 0.5 s (0 = hold the last command forever, like the real
                         motor bridge)
@@ -61,7 +64,7 @@ from std_msgs.msg import Header, String
 from jbl_nodes.camera_node import COMPRESSED_TOPIC, RAW_TOPIC, RateLimiter
 from jbl_nodes.episode_cli import EVENT_TOPIC, event_qos, parse_episode_event
 from jbl_nodes.imgconv import numpy_to_compressed, numpy_to_image
-from jbl_nodes.sim_world import SimWorld, WorldConfig, load_start_poses, start_pose_to_world
+from jbl_nodes.sim_world import CameraConfig, SimWorld, WorldConfig, load_start_poses, start_pose_to_world
 
 CMD_TOPIC = "/cmd_vel"
 ODOM_TOPIC = "/odom"
@@ -104,6 +107,7 @@ class FakeRobot(Node):
         box_x = float(self.declare_parameter("box_x", 1.5).value)
         box_y = float(self.declare_parameter("box_y", 0.0).value)
         box_yaw = float(self.declare_parameter("box_yaw", math.pi).value)
+        camera_hfov = float(self.declare_parameter("camera_hfov_rad", CameraConfig().hfov).value)
         rate_hz = float(self.declare_parameter("rate_hz", 50.0).value)
         scan_rate = float(self.declare_parameter("scan_rate", 10.0).value)
         camera_fps = float(self.declare_parameter("camera_fps", 10.0).value)
@@ -117,9 +121,17 @@ class FakeRobot(Node):
             raise ValueError("scan_rate, camera_fps, ground_truth_rate and cmd_timeout must be >= 0")
         if not 1 <= self._jpeg_quality <= 100:
             raise ValueError("jpeg_quality must be in [1, 100], got %d" % self._jpeg_quality)
+        if not 0.0 < camera_hfov < math.pi:
+            raise ValueError("camera_hfov_rad must be in (0, pi), got %s" % camera_hfov)
 
         world = WorldConfig(box_x=box_x, box_y=box_y, box_yaw=box_yaw)
-        self._sim = SimWorld(world=world, randomize=randomize, seed=seed, dt=1.0 / rate_hz)
+        self._sim = SimWorld(
+            world=world,
+            camera=CameraConfig(hfov=camera_hfov),
+            randomize=randomize,
+            seed=seed,
+            dt=1.0 / rate_hz,
+        )
         self._poses = {p.pose_id: p for p in load_start_poses(poses_file)}
         blocked = [i for i, p in self._poses.items() if self._sim.in_collision(start_pose_to_world(p, world))]
         if blocked:
@@ -160,7 +172,7 @@ class FakeRobot(Node):
 
         self.get_logger().info(
             "%d start poses from %s; box front at (%.2f, %.2f) facing %.0f deg; %s; "
-            "physics %.0f Hz, scan %.1f Hz, camera %.1f Hz"
+            "physics %.0f Hz, scan %.1f Hz, camera %.1f Hz (HFOV %.3f rad)"
             % (
                 len(self._poses),
                 poses_file,
@@ -171,6 +183,7 @@ class FakeRobot(Node):
                 rate_hz,
                 scan_rate,
                 camera_fps,
+                camera_hfov,
             )
         )
 

@@ -30,8 +30,9 @@ Scoring rules
     - Success needs outcome success AND zero interventions (an intervention is a fail by the
       success rule); a row claiming both is scored as a fail and reported.
     - Methods are compared with the baseline on the slots where both have a scored trial (pairs
-      on pose_id x round): exact and mid-p McNemar on the discordant pairs, and a paired
-      bootstrap CI for the difference in success rate. Unpaired slots are listed.
+      on pose_id x round): exact and mid-p McNemar on the discordant pairs, and a Newcombe
+      (1998, method 10) hybrid score CI for the paired difference in success rate (a bootstrap
+      over 0/1 pairs collapses to a point without discordant pairs). Unpaired slots are listed.
 
 Outputs in --out-dir (default: the directory of trials.csv): report.md and success.png.
 Exit status: 0 report written, 2 unreadable or malformed input.
@@ -295,7 +296,7 @@ class Comparison:
     only_method: list[Slot]  # method scored, baseline not
 
 
-def compare_with_baseline(method: str, baseline: str, scoring: Scoring, n_boot: int, seed: int) -> Comparison:
+def compare_with_baseline(method: str, baseline: str, scoring: Scoring) -> Comparison:
     base = {t.slot: t for (m, _, _), t in scoring.scored.items() if m == baseline}
     other = {t.slot: t for (m, _, _), t in scoring.scored.items() if m == method}
     paired = sorted(set(base) & set(other))
@@ -311,7 +312,7 @@ def compare_with_baseline(method: str, baseline: str, scoring: Scoring, n_boot: 
         baseline,
         table,
         stats.mcnemar_exact(table.b, table.c),
-        stats.paired_bootstrap_diff(x, y, CONFIDENCE, n_boot=n_boot, seed=seed),
+        stats.newcombe_paired_diff(table, CONFIDENCE),
         only_baseline,
         only_method,
     )
@@ -604,12 +605,13 @@ def analyze(
     seed: int = 0,
     setting: str | None = None,
 ) -> Analysis:
+    """n_boot and seed are ignored (the Δ CI is no longer a bootstrap); kept for old callers."""
     trials, issues = load_trials(trials_path)
     scoring = score_trials(trials)
     issues += scoring.issues
     order = method_order({t.method for t in trials}, baseline, methods)
     summaries = [summarize_method(m, scoring, target_range_m) for m in order]
-    comparisons = [compare_with_baseline(m, baseline, scoring, n_boot, seed) for m in order if m != baseline]
+    comparisons = [compare_with_baseline(m, baseline, scoring) for m in order if m != baseline]
     analysis = Analysis(
         trials_path, len(trials), baseline, order, scoring, summaries, comparisons, issues, target_range_m, n_boot,
         gate_rate_hz=gate_rate_hz,
@@ -648,8 +650,8 @@ def _section_paired(a: Analysis) -> list[str]:
     out += [
         "b = %s succeeded and the method failed; c = the method succeeded and %s failed. "
         "p values are two-sided (exact binomial on b + c; mid-p per Fagerland et al. 2013). "
-        "Δ = method − %s success rate over the pairs, with a paired percentile bootstrap CI "
-        "(%d resamples)." % (a.baseline, a.baseline, a.baseline, a.n_boot),
+        "Δ = method − %s success rate over the pairs, with a Newcombe (1998, method 10) hybrid "
+        "score CI for paired proportions." % (a.baseline, a.baseline, a.baseline),
         "",
     ]
     rows = []
@@ -690,7 +692,7 @@ def _section_paired(a: Analysis) -> list[str]:
 def _section_timing(a: Analysis) -> list[str]:
     out = ["## Time to dock and final error", ""]
     out += _table(
-        ("Method", "Time to dock, s (successes)", "Final range error, cm", "Final bearing error, deg"),
+        ("Method", "Time to dock, s (successes)", "Final range error, cm", "Final marker bearing, deg"),
         (
             (s.method, _median_iqr(s.dock_times_s), _median_iqr(s.range_errors_cm), _median_iqr(s.bearing_errors_deg))
             for s in a.summaries
@@ -701,8 +703,9 @@ def _section_timing(a: Analysis) -> list[str]:
         "",
         "Median (IQR). Time to dock = start event to the judge's end event (duration_s), so it "
         "includes the 1 s success hold. Range error = absolute difference between the final lidar "
-        "range and the %.2f m target; bearing error = absolute final marker bearing; both over all "
-        "scored trials with a dock_judge reading at the end." % a.target_range_m,
+        "range and the %.2f m target; marker bearing = absolute final bearing of the marker from the "
+        "image centre (not the robot's heading to the box face, which the judge does not measure); "
+        "both over all scored trials with a dock_judge reading at the end." % a.target_range_m,
         "",
     ]
 
@@ -920,8 +923,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--gate-rate-hz", type=float, default=GATE_RATE_HZ, help="safety_gate rate_hz (default %(default)s)"
     )
-    parser.add_argument("--n-boot", type=int, default=10000, help="bootstrap resamples (default %(default)s)")
-    parser.add_argument("--seed", type=int, default=0, help="bootstrap seed (default %(default)s)")
+    parser.add_argument("--n-boot", type=int, default=10000, help="ignored (the Δ CI is Newcombe's, not a bootstrap)")
+    parser.add_argument("--seed", type=int, default=0, help="ignored (kept so old command lines still run)")
     parser.add_argument("--setting", help='where the trials ran, shown in the report and chart, e.g. "real robot"')
     args = parser.parse_args(argv)
     if args.gate_rate_hz <= 0 or args.n_boot < 1:

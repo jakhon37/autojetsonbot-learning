@@ -388,6 +388,30 @@ def test_logger_marks_an_episode_without_an_end_and_missing_judge(graph, tmp_pat
     assert rows[1]["final_range_m"] == "" and rows[1]["notes"] == "no dock_judge status"
 
 
+def test_logger_counts_cli_interventions_and_keeps_their_notes(graph, tmp_path):
+    csv_path = tmp_path / "trials.csv"
+    rig = Rig(graph, World.facing_box(0.6))
+    logger(graph, csv_path)
+    graph.spin_for(0.5)
+    # "episode intervention <note>" during the trial, then the judge's (or the operator's) end.
+    for text in (
+        "start bc 7 2",
+        "intervention lifted it before the wall",
+        "intervention",
+        "end fail intervention",
+        "start servo 8 2",
+        "end fail intervention cable snagged",
+    ):
+        rig.event(text)
+        graph.spin_for(0.3)
+    assert graph.spin_until(lambda: csv_path.exists() and len(read_rows(csv_path)[1]) == 2, timeout=3.0)
+    _, rows = read_rows(csv_path)
+    summary = [(r["pose_id"], r["outcome"], r["interventions"]) for r in rows]
+    assert summary == [("7", "fail", "2"), ("8", "fail", "1")]
+    assert rows[0]["notes"] == "intervention; lifted it before the wall; no dock_judge status"
+    assert rows[1]["notes"] == "intervention cable snagged; no dock_judge status"
+
+
 # ---------------------------------------------------------------- servo_baseline
 
 

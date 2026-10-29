@@ -177,6 +177,28 @@ def test_success_conditions_and_thresholds(change, ok):
         assert decided[0][1].outcome == OUTCOME_SUCCESS
 
 
+@pytest.mark.parametrize(
+    "cmd, ok",
+    [
+        (None, True),  # no fresh request: the gate outputs zero
+        ((0.0, 0.0), True),
+        ((0.02, -0.05), True),
+        ((0.04, 0.0), False),  # still asking to drive; only the gate's slow zone holds it back
+        ((0.0, 0.2), False),
+        ((-0.03, 0.0), False),
+    ],
+)
+def test_stopped_needs_the_request_to_be_still_too(cmd, ok):
+    # Odometry alone reads "stopped" (0.015 m/s is below stopped_v) in band and aligned.
+    judge = DockJudge()
+    judge.start_episode(0.0)
+    decided = run(judge, 0.0, 3.0, v=0.015, cmd=cmd)
+    assert bool(decided) == ok
+    assert judge.status()["stopped"] == ok
+    if ok:
+        assert decided[0][1].outcome == OUTCOME_SUCCESS and decided[0][0] == pytest.approx(1.0)
+
+
 def test_timeout_fails_at_30_s():
     judge = DockJudge()
     judge.start_episode(5.0)

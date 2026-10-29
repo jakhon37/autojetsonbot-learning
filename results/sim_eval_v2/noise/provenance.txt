@@ -1,0 +1,12 @@
+condition: noise
+fake_robot: randomize true, seed 201, start poses config/start_poses.yaml, camera_hfov_rad 1.396
+dock_judge, servo_baseline: hfov_rad 1.396
+schedule: tools/make_schedule.py --methods servo,bc --poses 10 --rounds 3 --seed 2026 (interleaved)
+report: 2026-10-29T03:57:25Z
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: 7cfb1cbb09dc074bec4888d9c604e57544c6dd700c93171615a767f89783bbc7
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+segment: seg_20261029T022654Z (2026-10-29T02:26:54Z)
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 53 paths

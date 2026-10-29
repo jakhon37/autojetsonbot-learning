@@ -10,8 +10,8 @@ Subscribes
     image_topic       CompressedImage if the name ends in "/compressed", else Image; best
                       effort, depth 1; the newest frame is decoded once, on the next tick
     /scan             LaserScan (sensor-data QoS) -> front-sector median range
-    /episode/event    reliable + transient_local: "start <method_name> ..." enables, any "end"
-                      or a start for another method disables
+    /episode/event    reliable + transient_local: "start <method_name> ..." enables, any "end",
+                      an "intervention" or a start for another method disables
 Publishes
     /cmd_vel_in       geometry_msgs/Twist at rate_hz while enabled (or always with always_on);
                       one zero twist when disabled, then nothing, so teleop or a policy can
@@ -143,7 +143,7 @@ class ServoBaseline(Node):
         try:
             event = parse_episode_event(msg.data)
         except ValueError:
-            return  # "intervention" and other notes are not ours to act on
+            return  # malformed: not ours to act on
         if event.kind == "start" and event.method == self._method:
             if not self._enabled:
                 self.get_logger().info("enabled by '%s'" % msg.data)

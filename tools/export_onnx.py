@@ -39,7 +39,7 @@ from torch import nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ros2_ws" / "src" / "jbl_nodes"))
 from jbl_nodes import preprocess  # noqa: E402
 
-from train_bc import IMAGE_KEY, load_checkpoint  # noqa: E402
+from train_bc import IMAGE_KEY, frame_rgb_uint8, load_checkpoint  # noqa: E402
 
 INPUT_NAME = "image"
 OUTPUT_NAME = "action"
@@ -115,7 +115,7 @@ def dataset_inputs(root: Path, repo_id: str | None, count: int) -> list[np.ndarr
 
     ds = LeRobotDataset(repo_id or "local/%s" % root.resolve().name, root=root, return_uint8=True)
     indices = np.unique(np.linspace(0, len(ds) - 1, num=min(count, len(ds))).round().astype(int))
-    return [preprocess.to_model_input(ds[int(i)][IMAGE_KEY].permute(1, 2, 0).numpy())[None] for i in indices]
+    return [preprocess.to_model_input(frame_rgb_uint8(ds[int(i)][IMAGE_KEY]))[None] for i in indices]
 
 
 def parity(module: nn.Module, run: Any, inputs: Sequence[np.ndarray]) -> float:

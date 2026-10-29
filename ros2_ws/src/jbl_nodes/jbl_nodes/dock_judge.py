@@ -6,6 +6,9 @@ Subscribes
                             decoded, once, on the next tick
     /scan                   LaserScan (sensor-data QoS) -> front-sector median range
     /odom                   Odometry: twist.linear.x, twist.angular.z decide "stopped"
+    /cmd_vel_in             Twist (reliable, like the gate): the controller's request must be
+                            still too for "stopped"; none within cmd_timeout_s counts as still
+                            (the gate then outputs zero)
     /safety_gate/status     String JSON: "state" drives the pushed-into-obstacle rule
     /episode/event          reliable + transient_local: "start ..." begins judging, "end ..."
                             stops it, "intervention [...]" fails the running episode
@@ -24,7 +27,7 @@ Parameters (defaults)
     bearing_tol_deg 10.0    hold_s 1.0                  timeout_s 30.0    auto_end true
     stopped_v 0.02          stopped_w 0.05              obstacle_fail_s 2.0
     rate_hz 10.0            image_timeout_s 0.5         scan_timeout_s 0.5
-    odom_timeout_s 0.5      gate_timeout_s 1.5
+    odom_timeout_s 0.5      gate_timeout_s 1.5          cmd_timeout_s 0.3 (= the gate's)
 """
 
 import json
@@ -33,6 +36,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import rclpy
+from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -62,6 +66,7 @@ from jbl_nodes.judge_logic import (
 
 SCAN_TOPIC = "/scan"
 ODOM_TOPIC = "/odom"
+CMD_IN_TOPIC = "/cmd_vel_in"
 GATE_TOPIC = "/safety_gate/status"
 LOG_THROTTLE_S = 5.0
 
@@ -120,6 +125,7 @@ class DockJudgeNode(Node):
         self._scan_timeout_ns = int(float(p("scan_timeout_s", 0.5).value) * 1e9)
         self._odom_timeout_ns = int(float(p("odom_timeout_s", 0.5).value) * 1e9)
         self._gate_timeout_ns = int(float(p("gate_timeout_s", 1.5).value) * 1e9)
+        self._cmd_timeout_ns = int(float(p("cmd_timeout_s", 0.3).value) * 1e9)
         if rate_hz <= 0.0 or self._half_angle <= 0.0:
             raise ValueError("rate_hz and sector_half_angle must be positive")
 
@@ -133,11 +139,13 @@ class DockJudgeNode(Node):
         self._range = Stamped()
         self._odom = Stamped()
         self._gate = Stamped()
+        self._cmd = Stamped()
 
         self._decode = image_subscription(self, image_topic, self._on_image)
         self.create_subscription(LaserScan, SCAN_TOPIC, self._on_scan, qos_profile_sensor_data)
         self.create_subscription(Odometry, ODOM_TOPIC, self._on_odom, qos_profile_sensor_data)
         self.create_subscription(String, GATE_TOPIC, self._on_gate, 10)
+        self.create_subscription(Twist, CMD_IN_TOPIC, self._on_cmd, 10)
         self.create_subscription(String, EVENT_TOPIC, self._on_event, event_qos())
         self._status_pub = self.create_publisher(String, STATUS_TOPIC, 10)
         self._event_pub = self.create_publisher(String, EVENT_TOPIC, event_qos())
@@ -180,6 +188,9 @@ class DockJudgeNode(Node):
 
     def _on_odom(self, msg: Odometry) -> None:
         self._odom.set((msg.twist.twist.linear.x, msg.twist.twist.angular.z), self._now_ns())
+
+    def _on_cmd(self, msg: Twist) -> None:
+        self._cmd.set((msg.linear.x, msg.angular.z), self._now_ns())
 
     def _on_gate(self, msg: String) -> None:
         try:
@@ -238,6 +249,7 @@ class DockJudgeNode(Node):
             v,
             w,
             self._gate.fresh(now_ns, self._gate_timeout_ns),
+            self._cmd.fresh(now_ns, self._cmd_timeout_ns),
         )
         self._status_pub.publish(String(data=json.dumps(self._judge.status())))
         if verdict is not None:

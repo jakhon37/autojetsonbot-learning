@@ -5,13 +5,14 @@
 /**:
   ros__parameters:
     forward_angle: 0.0   # fake_robot's beam at angle 0 points straight ahead
-    hfov_rad: 1.396      # fake_robot's camera (sim_world.CameraConfig)
+    hfov_rad: 1.396      # what the judge and the servo assume; = fake_robot camera_hfov_rad
 
 fake_robot:
   ros__parameters:
     box_x: 1.5           # front face centre (m) in the 4 x 3 m room
     box_y: 0.0
     box_yaw: 3.14159265  # the face looks along -x
+    camera_hfov_rad: 1.396  # the simulated lens (80 deg); the robot's Pi Camera v2 is 1.0856
     camera_fps: 15.0     # the rate camera_node records /camera/image_raw/compressed at
     scan_rate: 10.0      # RPLidar A1
     jpeg_quality: 85

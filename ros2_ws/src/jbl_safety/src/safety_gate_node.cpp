@@ -99,12 +99,13 @@ public:
     const SafetyGateParams & p = gate_.params();
     RCLCPP_INFO(
       get_logger(),
-      "Gating %s -> %s at %.1f Hz: sector %.2f +- %.2f rad, stop %.3f m, slow %.3f m, "
-      "invalid-as-close %s, timeouts cmd %.2f s / scan %.2f s, limits %.2f m/s %.2f rad/s",
+      "Gating %s -> %s at %.1f Hz: sector %.2f +- %.2f rad, corridor +- %.3f m, stop %.3f m, "
+      "slow %.3f m, invalid-as-close %s (>= %d beams), timeouts cmd %.2f s / scan %.2f s, "
+      "limits %.2f m/s %.2f rad/s",
       cmd_sub_->get_topic_name(), cmd_pub_->get_topic_name(), p.rate_hz, p.forward_angle,
-      p.sector_half_angle, p.stop_distance, p.slow_distance,
-      p.treat_invalid_as_close ? "on" : "off", p.cmd_timeout, p.scan_timeout, p.max_linear,
-      p.max_angular);
+      p.sector_half_angle, p.footprint_half_width, p.stop_distance, p.slow_distance,
+      p.treat_invalid_as_close ? "on" : "off", p.min_invalid_beams, p.cmd_timeout,
+      p.scan_timeout, p.max_linear, p.max_angular);
   }
 
   /// Publishes a zero twist. Call only once no callback can run any more (executor stopped),
@@ -141,6 +142,12 @@ private:
     p.treat_invalid_as_close = declare_read_only(
       "treat_invalid_as_close", p.treat_invalid_as_close,
       "count 0/inf/nan/<range_min sector readings after a recent close reading as blocked");
+    p.min_invalid_beams = static_cast<int>(declare_read_only<int64_t>(
+        "min_invalid_beams", p.min_invalid_beams,
+        "invalid sector beams needed before they can count as blocked"));
+    p.footprint_half_width = declare_read_only(
+      "footprint_half_width", p.footprint_half_width,
+      "half width (m) of the forward corridor whose valid returns outside the sector count");
     p.cmd_timeout = declare_read_only(
       "cmd_timeout", p.cmd_timeout, "seconds without a command before publishing zero");
     p.scan_timeout = declare_read_only(
@@ -296,13 +303,16 @@ private:
 int main(int argc, char ** argv)
 {
   // rclcpp's own SIGINT/SIGTERM handler shuts the context down before anything can publish
-  // (Foxy has no pre-shutdown hook), so the final zero twist would be dropped. Block both
-  // signals in every thread instead (DDS and executor threads inherit this mask) and take them
-  // synchronously below while the context is still valid.
+  // (Foxy has no pre-shutdown hook), so the final zero twist would be dropped. Block every
+  // catchable signal whose default action is to terminate in every thread instead (DDS and
+  // executor threads inherit this mask) and take them synchronously below while the context
+  // is still valid. Only SIGKILL (and a crash) can still end the gate without a zero twist.
   sigset_t termination_signals;
   sigemptyset(&termination_signals);
   sigaddset(&termination_signals, SIGINT);
   sigaddset(&termination_signals, SIGTERM);
+  sigaddset(&termination_signals, SIGHUP);   // terminal closed, tmux pane or ssh session killed
+  sigaddset(&termination_signals, SIGQUIT);  // Ctrl-\ in the terminal
   pthread_sigmask(SIG_BLOCK, &termination_signals, nullptr);
 
   rclcpp::init(argc, argv);

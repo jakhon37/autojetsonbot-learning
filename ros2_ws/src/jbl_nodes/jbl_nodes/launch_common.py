@@ -160,8 +160,12 @@ def safety_gate(params: Params, respawn: bool = False) -> Node:
     """jbl_safety's gate with its installed defaults, then the shared params.
 
     On the real robot ``respawn`` is on: diffdrive_node has no command watchdog, so a gate that
-    is down leaves the motors on their last command; a respawned gate publishes zero again
-    within cmd_timeout.
+    dies without SIGINT/SIGTERM/SIGHUP/SIGQUIT (SIGKILL, a crash) leaves /cmd_vel at its last
+    value. The respawned gate publishes zero from its first tick, but on Foxy / Fast DDS
+    diffdrive_node only receives it after rediscovery, measured at 2.5-3.6 s after the kill.
+    Respawn restores gating; it does not stop the robot quickly. Only a motor-side command
+    timeout (the ESP32's 500 ms 'm' timeout, or a watchdog in diffdrive_node) does that:
+    docs/PROTOCOL.md section 4 checks it before any trial.
     """
     return Node(
         package="jbl_safety",

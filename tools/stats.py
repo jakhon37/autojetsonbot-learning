@@ -7,7 +7,11 @@ analyze_trials.py and the tests can use it directly.
     clopper_pearson_interval(k, n)   exact interval, for reference (conservative)
     mcnemar_exact(b, c)              exact and mid-p McNemar test on the discordant pair counts
     discordant_counts(base, other)   2x2 paired table from two aligned 0/1 outcome arrays
-    paired_bootstrap_diff(x, y)      percentile bootstrap CI for mean(x) - mean(y) over pairs
+    newcombe_paired_diff(table)      score CI for the paired difference of two success rates
+                                     (the one we report beside McNemar)
+    paired_bootstrap_diff(x, y)      percentile bootstrap CI for mean(x) - mean(y) over pairs;
+                                     for non-binary paired data (with 0/1 data and few
+                                     discordant pairs it collapses or is anti-conservative)
 
 References
     Wilson, E. B. (1927). Probable inference, the law of succession, and statistical inference.
@@ -23,6 +27,8 @@ References
         Methodology 13, 91.
     Efron, B., Tibshirani, R. J. (1993). An Introduction to the Bootstrap. Chapman & Hall,
         ch. 13 (percentile intervals).
+    Newcombe, R. G. (1998). Improved confidence intervals for the difference between binomial
+        proportions based on paired data. Statistics in Medicine 17(22), 2635-2650 (method 10).
 """
 
 from __future__ import annotations
@@ -167,6 +173,32 @@ class PairedDiff:
     n_pairs: int
     n_boot: int
     confidence: float
+
+
+def newcombe_paired_diff(table: PairedTable, confidence: float = 0.95) -> PairedDiff:
+    """Newcombe (1998) method-10 hybrid score CI for p_method - p_baseline from a paired 2x2 table.
+
+    Built from the Wilson intervals of the two marginal rates and the continuity-corrected phi
+    correlation of the pairs. Unlike a bootstrap over 0/1 pairs it does not collapse to a point
+    when there are no discordant pairs (10/10 vs 10/10 gives about +-28 pp, not 0 to 0), and it
+    stays consistent with the exact McNemar test when discordant pairs are few. n_boot is 0.
+    """
+    a, b, c, d = table.both_success, table.b, table.c, table.both_fail
+    n = table.n_pairs
+    if n == 0:
+        raise ValueError("need at least one pair")
+    p1, p2 = (a + c) / n, (a + b) / n  # method, baseline
+    l1, u1 = wilson_interval(a + c, n, confidence)
+    l2, u2 = wilson_interval(a + b, n, confidence)
+    denom = float((a + b) * (c + d) * (a + c) * (b + d))
+    num = float(a * d - b * c)
+    if num > 0:
+        num = max(num - n / 2.0, 0.0)  # continuity-corrected phi
+    phi = 0.0 if denom == 0.0 else num / np.sqrt(denom)
+    est = p1 - p2
+    low = est - np.sqrt(max((p1 - l1) ** 2 - 2.0 * phi * (p1 - l1) * (u2 - p2) + (u2 - p2) ** 2, 0.0))
+    high = est + np.sqrt(max((u1 - p1) ** 2 - 2.0 * phi * (u1 - p1) * (p2 - l2) + (p2 - l2) ** 2, 0.0))
+    return PairedDiff(float(est), float(max(-1.0, low)), float(min(1.0, high)), int(n), 0, float(confidence))
 
 
 def paired_bootstrap_diff(

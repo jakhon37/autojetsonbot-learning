@@ -1,9 +1,16 @@
 """Real robot, demonstrations: camera + safety gate + judge + trial logger (+ bag).
 
-    ros2 launch jbl_nodes robot_record.launch.py bag:=$HOME/jbl_bags/demos_$(date +%Y%m%d_%H%M)
+    D=/autonomous_ROS/autojetsonbot-learning/data/robot
+    ros2 launch jbl_nodes robot_record.launch.py bag:=$D/bags/demos_$(date +%Y%m%d_%H%M) \
+        trials_csv:=$D/trials/$(date +%Y-%m-%d)/demos.csv
+
+(scripts/record_robot.sh does this.) Keep bags and CSVs under the repository checkout, which is
+on autoJetsonBot's /autonomous_ROS bind mount: $HOME (/root) inside the container is not
+persistent and not visible on the Jetson host.
 
 Runs next to the robot's own bring-up (diffdrive_node on /cmd_vel, rplidar on /scan). Teleop
-is external and must publish /cmd_vel_in, e.g.
+is external and must publish /cmd_vel_in, e.g. the web dashboard with its Command Velocity
+topic set to /cmd_vel_in, or
 
     ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/cmd_vel_in
 

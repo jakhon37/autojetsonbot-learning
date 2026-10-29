@@ -45,6 +45,12 @@ else
   echo "warning: /etc/nv_tegra_release not found; this does not look like a Jetson" >&2
 fi
 dpkg-query -W -f='TensorRT: ${Version}\n' libnvinfer8 2>/dev/null || true
+# policy_runner's tensorrt backend needs the TensorRT Python bindings and pycuda in the Python
+# it runs with (JetPack installs neither pycuda nor, for Python 3.8, tensorrt): README, "Deployment".
+if ! python3 -c 'import tensorrt, pycuda.driver' >/dev/null 2>&1; then
+  echo "warning: python3 cannot import tensorrt and pycuda.driver here; policy_runner backend:=tensorrt" \
+    "will not start in this Python (README, Deployment: pip3 install 'pycuda==2022.1')" >&2
+fi
 
 echo "== 1. FP16 engine: $ONNX -> $ENGINE"
 "$TRTEXEC" \

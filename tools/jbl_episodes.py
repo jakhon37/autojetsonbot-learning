@@ -13,6 +13,7 @@ One JSON object per LeRobot episode, written by bag_to_lerobot.py:
     num_frames     frames written at the dataset fps
     start_time_ns  bag log time of the episode start
     max_image_age_s  oldest camera frame used at any tick (camera stalls show up here)
+    idle_start_s   zero-action time dropped before the first command (bag_to_lerobot --keep-idle-start)
 
 Splits are by episode, never by frame: neighbouring frames of one episode are nearly identical,
 so a frame-level split would leak training data into validation.
@@ -41,6 +42,7 @@ FIELDS = (
     "num_frames",
     "start_time_ns",
     "max_image_age_s",
+    "idle_start_s",
 )
 
 

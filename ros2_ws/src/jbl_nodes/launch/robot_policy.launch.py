@@ -2,7 +2,10 @@
 
     ros2 launch jbl_nodes robot_policy.launch.py model_path:=/models/bc/policy.engine backend:=tensorrt
     ros2 launch jbl_nodes robot_policy.launch.py model_path:=/models/bc/policy.onnx \
-        with_servo:=true trials_csv:=$HOME/jbl_trials/2026-11-02/trials.csv bag:=$HOME/jbl_bags/trials_r1
+        with_servo:=true trials_csv:=$D/trials/2026-11-02/trials.csv bag:=$D/bags/trials_r1
+
+with D=/autonomous_ROS/autojetsonbot-learning/data/robot (on the /autonomous_ROS bind mount;
+$HOME inside the container is not persistent).
 
 policy_runner drives only after ``start <method> ...`` (method_filter = the method argument)
 and stops on any ``end``. with_servo:=true adds servo_baseline for interleaved paired trials

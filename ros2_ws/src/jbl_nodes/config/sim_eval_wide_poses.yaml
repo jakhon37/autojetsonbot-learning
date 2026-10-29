@@ -1,0 +1,36 @@
+# Start poses BEYOND the training distribution, for the harder simulation evaluation
+# (scripts/sim_eval.sh, condition "wide"; results/sim_eval_v2). Not used for training or demos.
+#
+# The demonstrations (sim_demo_poses.yaml, spots 10-29) cover distance 0.70-1.70 m,
+# |lateral| <= 0.55 m, |heading| <= 45 deg and start bearings up to 63 deg; the test poses of
+# start_poses.yaml lie inside the same box. Every pose here is outside that box on at least one
+# axis (test_launch_config.py checks it): far (distance > 1.70 m), wide (|lateral| > 0.55 m),
+# steep (|heading| > 45 deg, so the marker starts out of view and must be searched for), or
+# near (distance < 0.70 m). Chosen from geometry alone before any trial was run; same
+# conventions as start_poses.yaml (distance / lateral / heading relative to the box front face).
+#
+# Start view measured in the simulator for the default box (scratch check with sim_world and
+# MarkerObserver; "turn" = in-place rotation after which the marker is detected).
+#
+#   id  dist  lateral  heading | beyond         | bearing | view, HFOV 80 deg      | view, HFOV 62.2 deg
+#    0  2.00   0.00      0     | far            |   0.0   | visible                | visible
+#    1  2.30  -0.30    +10     | far            |  -2.7   | visible                | visible
+#    2  1.90  +0.65    -15     | far, wide      |  -4.1   | visible                | visible
+#    3  1.20  +0.80      0     | wide           | -36.0   | visible (edge)         | out, ~7 deg right
+#    4  1.00  -0.75    +25     | wide           | +12.9   | visible                | visible
+#    5  1.00  +0.10    +60     | steep          | -71.1   | out, ~33 deg right     | out, ~41 deg right
+#    6  1.30  -0.20    -60     | steep          | +72.9   | out, ~34 deg left      | out, ~43 deg left
+#    7  0.60  +0.30    -35     | near           |  +9.9   | visible                | visible
+#    8  1.60  -0.70    -55     | wide, steep    | +81.9   | out, ~43 deg left      | out, ~51 deg left
+#    9  2.10  +0.50    +50     | far, steep     | -65.8   | out, ~27 deg right     | out, ~36 deg right
+start_poses:
+  - {pose_id: 0, distance_m: 2.00, lateral_m: 0.00, heading_deg: 0.0}
+  - {pose_id: 1, distance_m: 2.30, lateral_m: -0.30, heading_deg: 10.0}
+  - {pose_id: 2, distance_m: 1.90, lateral_m: 0.65, heading_deg: -15.0}
+  - {pose_id: 3, distance_m: 1.20, lateral_m: 0.80, heading_deg: 0.0}
+  - {pose_id: 4, distance_m: 1.00, lateral_m: -0.75, heading_deg: 25.0}
+  - {pose_id: 5, distance_m: 1.00, lateral_m: 0.10, heading_deg: 60.0}
+  - {pose_id: 6, distance_m: 1.30, lateral_m: -0.20, heading_deg: -60.0}
+  - {pose_id: 7, distance_m: 0.60, lateral_m: 0.30, heading_deg: -35.0}
+  - {pose_id: 8, distance_m: 1.60, lateral_m: -0.70, heading_deg: -55.0}
+  - {pose_id: 9, distance_m: 2.10, lateral_m: 0.50, heading_deg: 50.0}

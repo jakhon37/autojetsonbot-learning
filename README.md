@@ -4,7 +4,8 @@ Teleop demonstrations → LeRobot dataset → learned policy → on-robot deploy
 trials, on a real low-cost robot: [autoJetsonBot](https://github.com/jakhon37/autoJetsonBot)
 (Jetson Nano B01, ROS 2 Foxy, RPLidar A1, Pi Camera v2). The task is **camera-only docking**:
 from one of 10 marked start poses, drive to a box with an ArUco marker on its front face and
-stop squarely in front of it. A classical baseline (ArUco bearing + lidar range servo) and
+stop facing it at docking range (0.18–0.32 m lidar range, marker within 10° of the image
+centre; the rule does not measure squareness to the face). A classical baseline (ArUco bearing + lidar range servo) and
 learned policies (behaviour cloning, ACT) are compared on the same poses with a referee node
 that decides success, a C++ safety gate that is the only thing allowed to drive the motors,
 and a statistics script that reports k/n with confidence intervals and paired McNemar tests.
@@ -31,7 +32,7 @@ all three with the same topics.
  CONTROL  (one source at a time)
    teleop  |  servo_baseline  |  policy_runner (onnxruntime | tensorrt | torch)
         │
-        │  /cmd_vel_in   requested (v, w)  ── this is what the dataset records as the action
+        │  /cmd_vel_in   requested (v, w)  ── the dataset's action; dock_judge's "stopped" needs it still too
         ▼
    safety_gate  (C++, 50 Hz: clamp, slow / stop on the front lidar sector, command and scan timeouts)
         │──▶ /cmd_vel              the only topic the motors obey ──▶ diffdrive_node | fake_robot
@@ -82,6 +83,7 @@ Needs Docker and, for training, a Python 3.12 environment with `requirements-too
 ```bash
 bash scripts/sim_e2e.sh servo                                   # servo baseline, 10 poses, ~5 min
 PYTHON=.venv/bin/python bash scripts/sim_e2e.sh                 # everything below, ~50 min on 4 CPU cores
+PYTHON=.venv/bin/python bash scripts/sim_eval.sh                # harder v2 evaluation of the trained model, ~35 min per condition
 ```
 
 `sim_e2e.sh` starts a clean `ros:jazzy-ros-base` container (`--distro foxy|humble` also work),
@@ -113,27 +115,49 @@ models before trials, the counterbalanced schedule, interventions and aborts, vi
 analysis and honest reporting.
 
 Build inside the robot's Foxy container (autoJetsonBot's `./robot.sh shell`; clone this repo
-into the autoJetsonBot checkout so the container sees it under `/autonomous_ROS/`):
+into the autoJetsonBot checkout so the container sees it under `/autonomous_ROS/`). The stock
+container cannot open the CSI camera: recreate it once with `--runtime nvidia -v
+/tmp/argus_socket:/tmp/argus_socket` and check it (PROTOCOL section 4). Then:
 
 ```bash
 cd /autonomous_ROS/autojetsonbot-learning/ros2_ws && colcon build --symlink-install
 source install/setup.bash
-bash ../scripts/record_robot.sh                          # camera, gate, judge, logger + bag of the demos
-ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/cmd_vel_in   # other terminal
+bash ../scripts/record_robot.sh    # camera check, then camera, gate, judge, logger + bag in data/robot/
 ```
 
+Recordings go to `data/robot/` in this checkout, which is on the `/autonomous_ROS` bind mount
+(`/root` in the container is not persistent). Teleop must publish `/cmd_vel_in`: the web
+dashboard with its Command Velocity topic set to `/cmd_vel_in` (it publishes continuously while
+a key is held), a joystick, or `teleop_twist_keyboard --ros-args -r cmd_vel:=/cmd_vel_in` with a
+fast key repeat (PROTOCOL section 6).
+
 Nothing but `safety_gate` may publish `/cmd_vel`: `diffdrive_node` has no command watchdog, so
-any other publisher bypasses the gate (the launch files respawn the gate if it dies; a crash
-or SIGKILL of the gate still leaves the motors on their last command until it is back).
+any other publisher bypasses the gate. The gate publishes a zero twist on SIGINT, SIGTERM,
+SIGHUP and SIGQUIT, and the launch files respawn it if it dies; a crash or SIGKILL of the gate
+still leaves the motors on their last command until it is back (about 3 s on Foxy because of
+DDS rediscovery). The ESP32 firmware's 500 ms `m` command timeout is what actually bounds
+this, so verify it (PROTOCOL section 4) before anything drives on its own.
 
 ## Training
 
+Copy the recordings off the robot first (the container writes them world-readable):
+
 ```bash
-python tools/bag_to_lerobot.py ~/jbl_bags --root data/jbl_dock --repo-id <you>/jbl_dock   # Foxy .db3 or Jazzy .mcap
+rsync -av <jetson>:<autoJetsonBot checkout>/autojetsonbot-learning/data/robot/ data/robot/
+```
+
+```bash
+python tools/bag_to_lerobot.py data/robot/bags --root data/jbl_dock --repo-id <you>/jbl_dock   # Foxy .db3 or Jazzy .mcap
 python tools/train_bc.py --root data/jbl_dock --out runs/bc --pretrained --methods teleop --outcomes success --split-by pose_id
 python tools/export_onnx.py runs/bc/model.pt --dataset-root data/jbl_dock                 # -> runs/bc/policy.onnx + policy_meta.json
-DATASET_ROOT=data/jbl_dock bash tools/train_act.sh                                        # ACT via lerobot-train
+EPISODES=$(python -c 'import json; print(json.load(open("runs/bc/split.json"))["train"])') \
+  DATASET_ROOT=data/jbl_dock bash tools/train_act.sh                                      # ACT via lerobot-train, BC's training episodes
 ```
+
+`train_act.sh` without `EPISODES` selects the same way (`METHODS=teleop`, `OUTCOMES=success`,
+split by pose_id, validation fraction 0.2, seed 0); `EPISODES=all` trains on everything,
+including failed demos and trial rollouts. `bag_to_lerobot.py` drops each episode's idle start
+(the zero commands before the operator's first one; `--keep-idle-start` keeps them).
 
 The dataset is LeRobot v3 at 10 fps: `observation.images.front` (240×320 RGB from the JPEG
 stream), `observation.state` (odometry v, w), `action` (the `/cmd_vel_in` command), plus
@@ -174,16 +198,40 @@ opset 13 for that reason) and run `robot_policy.launch.py model_path:=policy_fp1
 backend:=tensorrt`. The TensorRT Python bindings of JetPack 4.6 are built for Python 3.6, but
 autoJetsonBot's Foxy container is Ubuntu 20.04 / Python 3.8, so the practical route is a
 [jetson-containers](https://github.com/dusty-nv/jetson-containers) L4T image that has ROS 2
-Foxy built against JetPack's Python (e.g. `dustynv/ros:foxy-ros-base-l4t-r32.7.1`), with this
-workspace built inside it. The ROS nodes avoid post-3.6 syntax and standard-library calls
-(checked with `vermin`, not run on 3.6). **Untested**: no Jetson was available, so the
-TensorRT backend and the engine script have only run against stand-ins.
+Foxy built against JetPack's Python (`dustynv/ros:foxy-ros-base-l4t-r32.<x>`), with this
+workspace built inside it. Pick the image tag that matches the first line of
+`/etc/nv_tegra_release`: r32.6.1 for JetPack 4.6, r32.7.1 for 4.6.1 (if that tag is not
+published, build the image with jetson-containers for your L4T). Start it with
+`--runtime nvidia --network host --ipc host`: the nodes in autoJetsonBot's `auto_ros_foxy`
+container talk to it over Fast DDS shared memory (its `docker-compose.yaml` already gives that
+container `ipc: host`; `robot.sh`'s fallback `docker run` does not, so use the one in
+PROTOCOL section 4). The tensorrt backend also needs pycuda, which JetPack does not install
+(cuda-python needs CUDA 11 and Python ≥ 3.7, so it cannot replace it on JetPack 4.6's CUDA
+10.2). Install and check it inside the container:
+
+```bash
+export PATH=/usr/local/cuda/bin:$PATH
+pip3 install 'pycuda==2022.1'   # the last release for Python 3.6
+python3 -c 'import tensorrt, pycuda.driver'
+```
+
+The ROS nodes avoid post-3.6 syntax and standard-library calls (checked with `vermin`, not run
+on 3.6). **Untested**: no Jetson was available, so the TensorRT backend and the engine script
+have only run against stand-ins.
 
 ## Results (SIMULATION)
 
 > **SIMULATION ONLY.** Every number in this section comes from `fake_robot` in a Docker
 > container on an x86 laptop CPU, not from autoJetsonBot. It shows that the pipeline runs end
 > to end. It says nothing about how either method does on the real robot.
+
+There are two runs. The **clean run** below has randomisation off and 1 round per pose. It is at
+the ceiling for the servo (10/10) and the floor for BC (0/10), so it says nothing about how
+either method degrades. The **harder evaluation (v2)** after it adds randomisation, start poses
+beyond the training distribution and the robot's 62.2° lens, with 10 poses × 3 rounds per
+condition. Its results are in [results/sim_eval_v2](results/sim_eval_v2/SUMMARY.md).
+
+### Clean run (pipeline check; at ceiling for the servo, floor for BC)
 
 Setup (`scripts/sim_e2e.sh`, October 2026):
 
@@ -196,49 +244,135 @@ Setup (`scripts/sim_e2e.sh`, October 2026):
   test poses were never trained on. The model was exported to ONNX (opset 13; ONNX Runtime
   matches PyTorch to 5.4e-7) and run by `policy_runner` with ONNX Runtime on CPU inside the
   ROS container.
+- **Provenance.** The demonstrations and the BC model predate the repository's first commit
+  (5a83553; the Jazzy demos also predate a later edit to `launch_common.py`). The servo and BC
+  trials below were re-run on 29 October 2026 on 5a83553 plus uncommitted fixes (the review
+  fixes to the judge, the gate and the tools). `results/sim_e2e/<distro>/provenance.txt`
+  records per stage the commit and the number of changed paths, plus the image digest, the
+  ONNX Runtime version and the model's sha256 (`7cfb1cbb…`, also in `bc_policy_meta.json`).
+  The 45 MB `policy.onnx` is not in git.
 
-| ROS 2 (container) | Method | Success | Wilson 95% CI | Time to dock, s | Final range error, cm | Final bearing error, deg |
+| ROS 2 (container) | Method | Success | Wilson 95% CI | Time to dock, s | Final range error, cm | Final marker bearing, deg |
 |---|---|---:|---:|---:|---:|---:|
-| Jazzy (Python 3.12, ONNX Runtime 1.31.1) | servo | 10/10 | 72–100% | 9.7 (8.5–13.5) | 3.5 (2.9–3.6) | 3.6 (3.6–3.7) |
-| Jazzy | bc | 10/10 | 72–100% | 10.7 (8.9–13.7) | 3.8 (3.5–4.8) | 1.1 (0.9–2.1) |
-| Foxy (Python 3.8, ONNX Runtime 1.10.0) | servo | 10/10 | 72–100% | 10.1 (8.3–14.1) | 3.3 (3.0–3.5) | 3.6 (3.4–3.6) |
-| Foxy | bc | 10/10 | 72–100% | 10.7 (8.8–13.7) | 3.9 (3.7–4.7) | 1.3 (1.0–2.0) |
+| Jazzy (Python 3.12, ONNX Runtime 1.31.1) | servo | 10/10 | 72–100% | 13.8 (12.2–18.1) | 2.0 (2.0–2.0) | 3.7 (3.5–3.8) |
+| Jazzy | bc | 0/10 | 0–28% | — | 2.0 (1.3–3.0) | 1.9 (1.2–2.3) |
+| Foxy (Python 3.8, ONNX Runtime 1.10.0) | servo | 10/10 | 72–100% | 13.6 (12.5–18.2) | 2.0 (2.0–2.0) | 3.7 (3.4–3.9) |
+| Foxy | bc | 0/10 | 0–28% | — | 2.0 (1.3–3.0) | 1.9 (1.1–2.3) |
 
 Times and errors are median (IQR). Time to dock includes the judge's 1 s success hold; range
-error is measured from the 0.25 m target. Paired exact McNemar test of bc against servo: no
-discordant pairs (b = 0, c = 0, p = 1) on either distro.
+error is measured from the 0.25 m target; the marker bearing is the marker's angle from the
+image centre, not the robot's heading to the box face. Paired exact McNemar test of bc against
+servo on both distros: b = 10, c = 0, p = 0.002; difference in success rate −100 pp (95%
+Newcombe CI −100 to −61 pp). All 10 bc failures are timeouts.
 
 Training and runtime on the same CPU (4 cores):
 
 - **Training.** 32 episodes / 3,801 frames for training, and 8 episodes / 948 frames from 4
   held-out spots for validation. Each epoch took 4–7 min. Validation MAE was 0.013 m/s and
   0.030 rad/s, against 0.038 m/s and 0.141 rad/s for always predicting the mean command.
-- **Policy latency.** Inference took 20 ms (p50) and 55 ms (p99) on Jazzy, 22 ms and 41 ms on
-  Foxy. Tick start to `/cmd_vel_in` took 26–28 ms (p50). At the start of a tick the newest
-  frame was 38 ms old (p50).
-- **Safety gate timing.** The 50 Hz timer missed 1–5 deadlines per run of about 8,000 ticks
-  (≤ 0.064%). The period p99 was at most 23.7 ms.
+- **Policy latency.** Inference took 23 ms (p50) and 65 ms (p99) on Jazzy, 22 ms and 40 ms on
+  Foxy. Tick start to `/cmd_vel_in` took 27–29 ms (p50). At the start of a tick the newest
+  frame was 45 ms (Jazzy) and 64 ms (Foxy) old (p50).
+- **Safety gate timing.** The 50 Hz timer missed 7–13 deadlines per run of 9,000–17,000 ticks
+  (≤ 0.13%); the period p99 was at most 24.8 ms. The worst single period, 341 ms in the Jazzy
+  servo run, fell while a host test suite was running on the same CPU.
 
 What this does and does not show:
 
-- **The parts work together.** On Foxy, the robot's distro, and on Jazzy:
-  - recording, conversion, training, export, ONNX Runtime inference in a ROS node, the
-    judge, the logger and the statistics all ran;
-  - the trained policy docked from all 10 held-out test poses.
-- **The comparison is at a ceiling.** Both methods scored 10/10, so with 10 trials each the
-  confidence intervals are wide (72–100%) and there is no evidence of a difference either way.
-- **Why BC does well here.**
-  - It imitates the servo in the same flat-shaded room it was trained in.
-  - The trials had no disturbances.
-  - Its smaller final bearing error comes from its continuous output: the servo stops turning
-    inside a ±4° alignment deadband.
-- **How the Foxy servo trials ran.** BC training was running on the same CPU at the time
-  (niced). The Foxy trials reuse the model trained on the Jazzy recordings.
+- **The parts work together.** On Foxy, the robot's distro, and on Jazzy, recording,
+  conversion, training, export, ONNX Runtime inference in a ROS node, the judge, the logger and
+  the statistics all ran.
+- **The servo docks and stops by itself** from all 10 poses on both distros: it commands zero
+  once the lidar range is at most 0.27 m (target + tolerance) and the marker is inside its ±4°
+  deadband. The judge's hold can start a little earlier, while the servo still creeps at
+  0.017–0.019 m/s, just under the 0.02 m/s "still" threshold. On Jazzy, 2 of the 10 successes
+  (poses 4 and 5) were declared before the zero command came.
+- **The trained policy never stops, so it never succeeds.** It reaches the docking band facing
+  the marker from all 10 held-out poses, but in the last 5 s of every episode it still
+  requested 0.021–0.032 m/s; the gate's slow zone cut that to about 0.002 m/s near its stop
+  distance, and the judge, which now also requires the request on `/cmd_vel_in` to be still,
+  ran each episode into its 30 s timeout. The cause is the training data: the demonstrations
+  were recorded with the earlier judge, whose odometry-only "stopped" test (≤ 0.02 m/s) passed
+  while the servo was still creeping inside the slow zone, so every demonstration ended before
+  the servo commanded zero and the dataset holds no stop examples.
+- **The earlier 10/10 for bc was an artefact.** Before the judge checked the request, the same
+  `policy.onnx` scored 10/10 on both distros: every success was declared while the robot was
+  still being driven forward, slowed below 0.02 m/s only by the gate. (The earlier servo
+  successes were also declared while it was still creeping, before its own stop.)
+- **"Facing the marker" is not "square to the box".** Ground truth at the end of each servo
+  success (`/fake_robot/ground_truth` in the bags): poses 1–6 and 9 ended 16–29° off square
+  with 8–15 cm sideways offset; only poses 0, 7 and 8 ended within 4° of square. The judge
+  does not measure this.
+- **The servo's times grew** from 9.7 s to 13.8 s (median, Jazzy) because the judge now waits
+  for it to stop and the gate's forward corridor (`footprint_half_width`) slows oblique final
+  approaches; poses 5 and 7 took 26–27 s of the 30 s budget.
+- **Small bc final marker bearing** (1.9° against the servo's 3.7°) comes from its continuous
+  output: the servo stops turning inside its ±4° deadband.
+- **Both Foxy runs reuse the model** trained on the Jazzy recordings.
 
 Reports with every table, the outcome breakdown and the chart:
 [results/sim_e2e/jazzy/report.md](results/sim_e2e/jazzy/report.md) and
 [results/sim_e2e/foxy/report.md](results/sim_e2e/foxy/report.md). The demonstration log, BC
 metrics, split and `policy_meta.json` are next to them.
+
+### Harder evaluation (v2)
+
+Run with `scripts/sim_eval.sh` on Jazzy, 29 October 2026, using the same `policy.onnx`. It was
+not retrained: the later fixes change neither its preprocessing nor its dataset format.
+
+- **Conditions.** `fake_robot` ran with `randomize:=true` in all three, with one seed per
+  condition:
+  - `noise`: the test poses with the randomisation the demonstrations were recorded with
+    (lighting gain and offset, pixel noise, wheel bias and slip, lidar noise, start jitter).
+  - `wide`: 10 start poses outside the demonstrations' distance / lateral / heading box
+    (`config/sim_eval_wide_poses.yaml`: far, wide, steep, near).
+  - `hfov62`: the robot's 62.2° lens in place of the simulator's 80°. The judge and the servo
+    were told the true HFOV; BC was trained at 80°.
+- **Trials.** 10 poses × 3 rounds per method per condition, with servo and bc interleaved in
+  one launch in a `tools/make_schedule.py` order. That makes 180 trials: all scored, none
+  aborted.
+- **Outcomes.** The primary outcome is the unchanged judge rule. The secondary outcome is
+  *zone reached*: in band and aligned for ≥ 1 s, with the stop requirement dropped, taken from
+  the judge's status in the bags.
+
+| Condition | Method | Success (judge) | Wilson 95% CI | b / c vs servo, exact McNemar p | Time to dock, s | Zone reached (stop ignored) | Time to zone, s | Min requested v, last 1 s, m/s |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| noise | servo | 27/30 | 74–97% | — | 14.8 (12.7–18.1) | 30/30 | 9.3 | 0.000 |
+| noise | bc | 3/30 | 3–26% | 24 / 0, p = 1.2e-7 | 13.2 (13.2–21.7) | 30/30 | 10.2 | 0.026 |
+| wide | servo | 25/30 | 66–93% | — | 21.0 (17.8–22.0) | 30/30 | 14.9 | 0.000 |
+| wide | bc | 1/30 | 1–17% | 24 / 0, p = 1.2e-7 | 21.8 | 30/30 | 16.6 | 0.027 |
+| hfov62 | servo | 28/30 | 79–98% | — | 15.1 (12.8–18.7) | 30/30 | 9.3 | 0.000 |
+| hfov62 | bc | 20/30 | 49–81% | 8 / 0, p = 0.008 | 25.0 (21.9–26.9) | 30/30 | 15.2 | 0.019 |
+
+Times are medians (IQR) and requested speeds are medians over trials. The full tables, with
+final range, bearing, ground-truth squareness and offset, collisions and the clean reference
+row, are in [results/sim_eval_v2/SUMMARY.md](results/sim_eval_v2/SUMMARY.md). Each
+condition's `report.md` (per-pose results, latency, gate timing), `trials.csv`,
+`schedule.csv`, `episodes_gt.csv` and `provenance.txt` are in
+`results/sim_eval_v2/<condition>/`.
+
+What v2 shows and does not show:
+
+- **The methods separate on stopping, not on getting there.** The servo beats BC on the judge's
+  rule in every condition. Yet both reach the docking zone in 30/30 trials everywhere,
+  including from the out-of-distribution poses, with BC 1–6 s slower to get there.
+- **BC never commanded a stop in any trial.** Its smallest request in the last second was
+  always ≥ 0.016 m/s. Each BC success is its leftover creep dipping under the judge's 0.02 m/s
+  "still" threshold. Its 20/30 under the 62.2° lens comes from the narrower view making the
+  marker look closer, so BC creeps at about 0.019 instead of 0.027 m/s; it is not robustness to
+  the lens.
+- **The servo's 10 failures come from three mechanisms.**
+  - Pose 5 (5 of 6 trials in `noise` and `hfov62`): lidar noise toggles its request across its
+    0.27 m stop range, so the 1 s hold never completes.
+  - Wide pose 4 (2/3): about 39° off square, it pushes against the gate as BC does.
+  - Wide pose 9 (3/3): it reaches the zone only at 26–27 s of the 30 s limit.
+
+  Nothing collided.
+- **What it does not show.**
+  - How either method does on the robot (sim to sim, same renderer as the training images).
+  - Out-of-distribution lighting (`noise` uses the training magnitudes).
+  - Actuation latency (`fake_robot` has no command delay).
+  - Independent trials: 3 rounds of the same pose are correlated, so the CIs are too narrow.
 
 ## Tests
 
@@ -255,10 +389,11 @@ BC training and ONNX export parity, the statistics against statsmodels/scipy, an
 
 Last run (October 2026):
 
-- **Containers.** 229 tests on each of Foxy, Humble and Jazzy, with 0 failures and 6 skips. The
-  skipped tests are the ONNX Runtime and TorchScript backend checks; the base images have
+- **Containers.** 243 tests on each of Foxy and Jazzy, with 0 failures and 6 skips. Humble was
+  last run before the v2 wide-pose check was added, at 242 tests with 0 failures and 6 skips.
+  The skipped tests are the ONNX Runtime and TorchScript backend checks; the base images have
   neither package.
-- **Host.** 314 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`.
+- **Host.** 330 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`.
 
 ## Limitations
 
@@ -268,10 +403,16 @@ Last run (October 2026):
   gain. Sim success rates say the pipeline works end to end, not how a policy does on the robot.
 - **The BC policy is trained on scripted servo demonstrations**, from scratch, on CPU, from a
   few thousand frames. It imitates the baseline, so it cannot be expected to beat it; the
-  simulation run is a pipeline check with honest numbers, not a learning result. Both methods
-  reach 10/10 in the undisturbed simulator, a ceiling that cannot separate them; the trials
-  were not repeated with fake_robot's randomisation on (`randomize:=true`), which would be the
-  next, harder simulation check.
+  simulation run is a pipeline check with honest numbers, not a learning result. The harder
+  simulation evaluation (v2: randomisation on, out-of-distribution poses, the 62.2° lens) is in
+  the results above. It does not cover out-of-distribution lighting or actuation latency.
+- **The published BC model was never shown a stop.** Its demonstrations were recorded with the
+  earlier judge, whose "stopped" test looked at odometry only (≤ 0.02 m/s). Inside the gate's
+  slow zone that held while the servo was still asking for 0.02–0.04 m/s, so every
+  demonstration ended before the servo commanded zero and the dataset holds no stop examples.
+  The judge now also requires the request on `/cmd_vel_in` to be still, so demonstrations
+  recorded with it end with at least 1 s of zero command; the model has not been retrained on
+  such demonstrations yet.
 - **Recorded actions are requests, not motion.** `action` is `/cmd_vel_in`, before the gate
   scales or blocks it near the box. The bags also hold `/cmd_vel` and the gate status, but the
   dataset does not use them yet.
@@ -280,9 +421,13 @@ Last run (October 2026):
 - **TensorRT on the Nano, the real camera, the real lidar and the motor bridge are untested.**
   The lidar's 0° may point backwards on this robot (`forward_angle` may be π): calibrate it
   (PROTOCOL §4) before anything drives.
-- **Geometry in INTERFACES.md is approximate.** The docking target (lidar range 0.25 m) is about
-  0.22 m from bumper to box, not 0.12 m, and the robot's URDF places the chassis and camera
-  differently from the contract; the success band absorbs this in simulation.
+- **The simulator's chassis is not the URDF's.** `fake_robot` puts the bumper 0.033 m ahead of
+  the lidar (the 0.25 m docking range is then ≈ 0.22 m bumper to box); the URDF puts it 0.094 m
+  ahead (≈ 0.16 m) and the camera at x = 0.15 m. The success band and the gate thresholds are
+  lidar ranges, so they do not change, but measure the real robot (PROTOCOL §4).
+- **The success rule does not measure squareness.** "Facing the marker" is a bearing in the
+  image, not the robot's heading to the box face or its sideways offset (see the simulation
+  results).
 - **Episode events need care.** `/episode/event` is transient-local and a fresh `episode` CLI
   process can take up to ~3.5 s to reach every node (Fast DDS discovery); the CLI waits for
   that (or for `--expect N` subscribers in scripts) and reports a partial delivery with exit 3.

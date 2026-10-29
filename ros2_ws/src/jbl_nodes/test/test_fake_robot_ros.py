@@ -179,6 +179,20 @@ def test_start_teleports_then_cmd_vel_drives_towards_the_box(graph):
     assert graph.spin_until(lambda: odom[-1][0].twist.twist.linear.x == 0.0, timeout=1.5)
 
 
+def test_camera_hfov_parameter_sets_the_simulated_lens(graph):
+    jpegs = graph.record(CompressedImage, "/camera/image_raw/compressed", qos_profile_sensor_data)
+    overrides = [Parameter("initial_pose_id", value=1), Parameter("camera_hfov_rad", value=1.0856)]
+    graph.add(FakeRobot(context=graph.context, parameter_overrides=overrides))
+    assert graph.spin_until(lambda: len(jpegs) >= 2, timeout=5.0)
+    frame = imgconv.compressed_to_bgr(jpegs[-1][0])
+    # Pose 1: the marker is 15.3 deg to the right. An observer that assumes the simulated lens
+    # reads that; one that assumes the default 80 deg lens reads it too far out.
+    matched = MarkerObserver(hfov_rad=1.0856).observe(frame)
+    assumed_wide = MarkerObserver(hfov_rad=1.396).observe(frame)
+    assert matched is not None and matched.bearing_deg == pytest.approx(-15.3, abs=1.0)
+    assert assumed_wide is not None and assumed_wide.bearing_deg == pytest.approx(-20.8, abs=1.0)
+
+
 def test_ignores_unknown_poses_and_other_events(graph):
     gt = graph.record(String, GROUND_TRUTH_TOPIC)
     events = graph.probe.create_publisher(String, EVENT_TOPIC, event_qos())
@@ -217,6 +231,7 @@ def test_executable_rejects_bad_parameters():
         (["-p", "initial_pose_id:=10"], b"initial_pose_id 10 is not in"),
         (["-p", "start_poses_file:=/nonexistent/poses.yaml"], b"No such file"),
         (["-p", "box_x:=-1.0"], b"start poses [0"),
+        (["-p", "camera_hfov_rad:=0.0"], b"camera_hfov_rad must be in"),
     ):
         proc = subprocess.run(
             [exe, "--ros-args"] + args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20, env=env

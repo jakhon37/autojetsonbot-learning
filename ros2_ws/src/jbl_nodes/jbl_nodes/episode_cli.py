@@ -2,6 +2,12 @@
 
     ros2 run jbl_nodes episode [--timeout S] [--expect N] start <method> <pose_id> <round>
     ros2 run jbl_nodes episode [--timeout S] [--expect N] end <success|fail|abort> [reason ...]
+    ros2 run jbl_nodes episode [--timeout S] [--expect N] intervention [note ...]
+
+"intervention" reports an operator intervention in the running episode: dock_judge fails it
+(and, with auto_end, publishes "end fail intervention"), the controllers stop, and
+trial_logger counts it and keeps the note. "end fail intervention [note]" still works where
+no judge runs (trial_logger counts at least one intervention for it).
 
 Publishes one std_msgs/String with reliable, transient_local QoS (depth 10). A fresh process
 matches the running nodes one by one, and a node that misses the initial discovery burst
@@ -43,7 +49,8 @@ _METHOD_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 USAGE = (
     "episode [--timeout S] [--expect N] start <method> <pose_id> <round>\n"
-    "       episode [--timeout S] [--expect N] end <%s> [reason ...]" % "|".join(OUTCOMES)
+    "       episode [--timeout S] [--expect N] end <%s> [reason ...]\n"
+    "       episode [--timeout S] [--expect N] intervention [note ...]" % "|".join(OUTCOMES)
 )
 
 
@@ -58,12 +65,12 @@ def event_qos() -> QoSProfile:
 
 
 class EpisodeEvent(NamedTuple):
-    kind: str  # "start" or "end"
+    kind: str  # "start", "end" or "intervention"
     method: str = ""
     pose_id: int = -1
     round: int = -1
     outcome: str = ""
-    reason: str = ""
+    reason: str = ""  # end: the reason; intervention: the note
 
 
 def _non_negative_int(text: str, what: str) -> int:
@@ -79,7 +86,7 @@ def _non_negative_int(text: str, what: str) -> int:
 def parse_event_args(args: Sequence[str]) -> EpisodeEvent:
     """Command-line words (or the words of a message) -> EpisodeEvent; ValueError if malformed."""
     if not args:
-        raise ValueError("missing event kind (start or end)")
+        raise ValueError("missing event kind (start, end or intervention)")
     kind, rest = args[0], list(args[1:])
     if kind == "start":
         if len(rest) != 3:
@@ -99,7 +106,9 @@ def parse_event_args(args: Sequence[str]) -> EpisodeEvent:
         if rest[0] not in OUTCOMES:
             raise ValueError("outcome must be one of %s, got %r" % (", ".join(OUTCOMES), rest[0]))
         return EpisodeEvent("end", outcome=rest[0], reason=" ".join(" ".join(rest[1:]).split()))
-    raise ValueError("event kind must be start or end, got %r" % kind)
+    if kind == "intervention":
+        return EpisodeEvent("intervention", reason=" ".join(" ".join(rest).split()))
+    raise ValueError("event kind must be start, end or intervention, got %r" % kind)
 
 
 def parse_episode_event(text: str) -> EpisodeEvent:
@@ -110,6 +119,8 @@ def parse_episode_event(text: str) -> EpisodeEvent:
 def format_episode_event(event: EpisodeEvent) -> str:
     if event.kind == "start":
         return "start %s %d %d" % (event.method, event.pose_id, event.round)
+    if event.kind == "intervention":
+        return ("intervention %s" % event.reason).rstrip()
     return ("end %s %s" % (event.outcome, event.reason)).rstrip()
 
 
@@ -181,7 +192,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="number of subscribers that must receive the event, e.g. from a script that knows "
         "which nodes run (default: wait until no new one matches for %.0f s)" % SETTLE_S,
     )
-    parser.add_argument("event", nargs=argparse.REMAINDER, help="start ... | end ...")
+    parser.add_argument("event", nargs=argparse.REMAINDER, help="start ... | end ... | intervention ...")
     opts = parser.parse_args(rclpy.utilities.remove_ros_args(argv)[1:])
     try:
         if opts.timeout <= 0:

@@ -1,0 +1,14 @@
+report: 2026-10-29T01:53:04Z
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 46 paths
+image: mirror.gcr.io/library/ros@sha256:8eed0a4669bbf43ee331878a4c39bd8ebddea8e3312a58b4fae8edb14526b617
+policy.onnx sha256: 7cfb1cbb09dc074bec4888d9c604e57544c6dd700c93171615a767f89783bbc7
+onnxruntime 1.31.1 ['AzureExecutionProvider', 'CPUExecutionProvider']
+
+stage: servo (2026-10-29T01:41:42Z)
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 33 paths
+
+stage: bc (2026-10-29T01:46:48Z)
+commit: 5a8355375707f72404594e155d1f6ad937d71858
+dirty: 40 paths

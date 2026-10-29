@@ -79,6 +79,10 @@ void validate(const SafetyGateParams & p)
   require(
     std::isfinite(p.slow_distance) && p.slow_distance > p.stop_distance,
     "slow_distance must be greater than stop_distance");
+  require(p.min_invalid_beams >= 1, "min_invalid_beams must be at least 1");
+  require(
+    std::isfinite(p.footprint_half_width) && p.footprint_half_width >= 0.0,
+    "footprint_half_width must be a non-negative number");
   require(positive_finite(p.cmd_timeout), "cmd_timeout must be a positive number");
   require(positive_finite(p.scan_timeout), "scan_timeout must be a positive number");
   require(positive_finite(p.max_linear), "max_linear must be a positive number");
@@ -127,36 +131,58 @@ bool SafetyGate::ingest_scan(
   // Per-beam angular distance to the forward direction handles any forward_angle, scans that
   // wrap through +-pi, and both rotation directions without special cases. At 360 beams and
   // 10 Hz this costs microseconds.
-  bool sector_seen = false;
-  bool invalid_seen = false;
-  std::optional<double> valid_min;
+  std::size_t sector_beams = 0;
+  std::size_t invalid_beams = 0;
+  std::optional<double> sector_min;  // nearest valid sector range
+  std::optional<double> corridor_min;  // nearest forward distance of a valid corridor return
   for (std::size_t i = 0; i < ranges.size(); ++i) {
     const double angle = angle_min + static_cast<double>(i) * angle_increment;
-    if (std::abs(wrap_angle(angle - params_.forward_angle)) >
-      params_.sector_half_angle + kAngleTolerance)
-    {
+    const double relative = wrap_angle(angle - params_.forward_angle);
+    const double range = ranges[i];
+    const bool valid = std::isfinite(range) && range > 0.0 && range >= lower;
+    if (std::abs(relative) > params_.sector_half_angle + kAngleTolerance) {
+      // Outside the sector: a valid return inside the robot's forward swept corridor still
+      // counts, at its forward distance, so an obstacle ahead of a chassis corner is not lost.
+      // Invalid readings out here are never counted (no-return beams are common).
+      if (valid && range <= upper) {
+        const double x = range * std::cos(relative);
+        const double y = range * std::sin(relative);
+        if (x > 0.0 && std::abs(y) <= params_.footprint_half_width) {
+          corridor_min = corridor_min ? std::min(*corridor_min, x) : x;
+        }
+      }
       continue;
     }
-    sector_seen = true;
-    const double range = ranges[i];
-    if (!std::isfinite(range) || range <= 0.0 || range < lower) {
-      invalid_seen = true;
+    ++sector_beams;
+    if (!valid) {
+      ++invalid_beams;
     } else if (range <= upper) {
-      valid_min = valid_min ? std::min(*valid_min, range) : range;
+      sector_min = sector_min ? std::min(*sector_min, range) : range;
     }
     // A finite reading beyond range_max says nothing is within range: treat as clear.
   }
-  if (!sector_seen) {
+  if (sector_beams == 0) {
     return false;
   }
 
+  std::optional<double> valid_min = sector_min;
+  if (corridor_min) {
+    valid_min = valid_min ? std::min(*valid_min, *corridor_min) : corridor_min;
+  }
   if (valid_min && *valid_min < params_.slow_distance) {
     last_close_time_ = time;
   }
   // The RPLidar reports objects closer than its minimum range as 0, inf or < range_min, which
   // is indistinguishable from "no return" in a single scan. A close reading shortly before
-  // disambiguates it.
-  const bool invalid_blocks = params_.treat_invalid_as_close && invalid_seen &&
+  // disambiguates it. rplidar_ros (angle_compensate) also publishes every empty 1-degree bin as
+  // +inf, so most scans hold scattered invalid beams: they count only when there are at least
+  // min_invalid_beams of them and no valid sector reading lies beyond the edge of the dead
+  // zone (otherwise the lidar is looking past whatever is invalid).
+  const std::size_t needed =
+    std::min(static_cast<std::size_t>(params_.min_invalid_beams), sector_beams);
+  const double near_limit = std::max(params_.stop_distance, lower) + kDeadZoneMargin;
+  const bool invalid_blocks = params_.treat_invalid_as_close && invalid_beams >= needed &&
+    (!sector_min || *sector_min <= near_limit) &&
     last_close_time_ && time - *last_close_time_ <= kCloseMemory;
   if (invalid_blocks) {
     last_close_time_ = time;

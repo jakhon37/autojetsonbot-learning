@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from jbl_nodes import aruco_utils as au
+from jbl_nodes.sim_world import CameraConfig as SimCameraConfig
 from jbl_nodes.sim_world import Pose2D, SimWorld, load_start_poses, start_pose_to_world
 
 PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -66,6 +67,22 @@ def test_params_files_match_declared_parameter_types(name):
             )
 
 
+def test_robot_and_sim_cameras_are_explicit():
+    with open(os.path.join(CONFIG, "robot.yaml")) as f:
+        robot = yaml.safe_load(f)
+    with open(os.path.join(CONFIG, "sim.yaml")) as f:
+        sim = yaml.safe_load(f)
+    # The robot: a stock Raspberry Pi Camera v2 lens (62.2 deg), read through Argus in the
+    # full-sensor 4:3 mode (not a cropped 16:9 one) and scaled to 640x480.
+    assert robot["/**"]["ros__parameters"]["hfov_rad"] == pytest.approx(math.radians(62.2), abs=1e-3)
+    device = robot["camera_node"]["ros__parameters"]["device"]
+    assert device.startswith("nvarguscamerasrc") and "width=1640,height=1232" in device
+    assert "width=640,height=480" in device and "appsink" in device
+    # The simulator: its own lens, stated next to what the judge and the servo assume.
+    camera_hfov = sim["fake_robot"]["ros__parameters"]["camera_hfov_rad"]
+    assert camera_hfov == sim["/**"]["ros__parameters"]["hfov_rad"] == pytest.approx(SimCameraConfig().hfov)
+
+
 def test_sim_demo_poses_keep_the_test_poses_held_out():
     tests = load_start_poses(os.path.join(CONFIG, "start_poses.yaml"))
     poses = load_start_poses(os.path.join(CONFIG, "sim_demo_poses.yaml"))
@@ -97,3 +114,27 @@ def _found_within(sim, observer, pose, side, max_deg=90):
         if observer.observe(sim.render()) is not None:
             return True
     return False
+
+
+def test_sim_eval_wide_poses_lie_outside_the_training_distribution():
+    """scripts/sim_eval.sh condition "wide": every pose outside the demonstrations' box on at
+    least one axis, placeable, and the marker findable within a 90 deg turn at both lenses."""
+    spots = load_start_poses(os.path.join(CONFIG, "sim_demo_poses.yaml"))[10:]
+    poses = load_start_poses(os.path.join(CONFIG, "sim_eval_wide_poses.yaml"))
+    assert [p.pose_id for p in poses] == list(range(10))
+    d_lo, d_hi = min(s.distance_m for s in spots), max(s.distance_m for s in spots)
+    lat_hi = max(abs(s.lateral_m) for s in spots)
+    head_hi = max(abs(s.heading_deg) for s in spots)
+    for p in poses:
+        assert (
+            p.distance_m < d_lo or p.distance_m > d_hi or abs(p.lateral_m) > lat_hi or abs(p.heading_deg) > head_hi
+        ), "pose %d is inside the demonstrations' distance / lateral / heading box" % p.pose_id
+    for hfov in (SimCameraConfig().hfov, 1.0856):
+        sim = SimWorld(camera=SimCameraConfig(hfov=hfov))
+        observer = au.MarkerObserver(hfov_rad=hfov)
+        for p in poses:
+            pose = sim.reset_to_start(p)  # raises if it overlaps the box or a wall
+            if observer.observe(sim.render()) is not None:
+                continue
+            side = math.copysign(1.0, sim.marker_bearing_deg())
+            assert _found_within(sim, observer, pose, side), "pose %d at HFOV %.3f" % (p.pose_id, hfov)

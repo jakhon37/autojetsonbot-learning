@@ -8,6 +8,9 @@
     stop_distance: 0.17           # m; at or below: forward motion zeroed
     slow_distance: 0.45           # m; forward speed scales 1 -> 0 between slow and stop
     treat_invalid_as_close: true  # 0/inf/nan/<range_min after a recent close reading = blocked
+    min_invalid_beams: 3          # ... only with at least this many invalid sector beams
+    footprint_half_width: 0.15    # m; valid returns outside the sector within +- this of the
+                                  # robot's centreline (and ahead) count at their forward distance
     cmd_timeout: 0.3              # s without /cmd_vel_in -> zero output
     scan_timeout: 0.5             # s without /scan -> forward blocked, reverse/rotation allowed
     max_linear: 0.25              # m/s clamp

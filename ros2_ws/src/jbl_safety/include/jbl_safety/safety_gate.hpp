@@ -27,6 +27,12 @@ struct SafetyGateParams
   double stop_distance = 0.17;
   double slow_distance = 0.45;
   bool treat_invalid_as_close = true;
+  /// Invalid sector beams needed before they can count as blocked (or every sector beam, if
+  /// the sector holds fewer): rplidar_ros reports scattered empty bins as +inf.
+  int min_invalid_beams = 3;
+  /// Valid returns outside the sector, ahead of the lidar and at most this far to either side,
+  /// count at their forward distance, so an obstacle ahead of a chassis corner is not lost.
+  double footprint_half_width = 0.15;
   double cmd_timeout = 0.3;
   double scan_timeout = 0.5;
   double max_linear = 0.25;
@@ -54,9 +60,9 @@ struct GateOutput
   double v = 0.0;
   double w = 0.0;
   GateState state = GateState::kStopScanTimeout;
-  /// Front distance the decision was based on: the minimum valid sector range, 0.0 when invalid
-  /// readings are counted as blocked, nullopt when the sector holds no usable reading or the
-  /// scan is stale.
+  /// Front distance the decision was based on: the minimum of the valid sector ranges and the
+  /// forward distances of valid corridor returns, 0.0 when invalid readings are counted as
+  /// blocked, nullopt when neither holds a usable reading or the scan is stale.
   std::optional<double> front_min;
   /// Factor applied to forward linear speed (1 = free, 0 = blocked).
   double scale = 0.0;
@@ -75,12 +81,16 @@ public:
   /// readings counted as blocked. A scan blocked this way refreshes the memory, so an obstacle
   /// that has moved into the lidar dead zone stays blocked for as long as it remains there.
   static constexpr double kCloseMemory = 0.5;
+  /// Invalid beams count as blocked only while the nearest valid sector reading (if any) is
+  /// within this distance of max(stop_distance, range_min): beyond that the lidar sees past them.
+  static constexpr double kDeadZoneMargin = 0.05;
 
   explicit SafetyGate(const SafetyGateParams & params = SafetyGateParams());
 
   const SafetyGateParams & params() const {return params_;}
 
-  /// Evaluates the front sector of a scan received at `time`. Returns false, leaving the
+  /// Evaluates the front sector (plus the forward footprint corridor for valid returns) of a
+  /// scan received at `time`. Returns false, leaving the
   /// previous scan in effect (so it eventually times out), when the scan geometry is unusable:
   /// non-finite or zero increment, no ranges, inconsistent range limits, or no beam inside the
   /// sector.

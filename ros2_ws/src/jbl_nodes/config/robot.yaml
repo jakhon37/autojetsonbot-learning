@@ -9,14 +9,18 @@
 /**:
   ros__parameters:
     forward_angle: 0.0   # /scan angle that points straight ahead (URDF yaw 0; may be pi)
-    hfov_rad: 1.396      # 80 deg per INTERFACES.md; a stock Pi Camera v2 lens is 62.2 deg = 1.086
+    hfov_rad: 1.0856     # stock Raspberry Pi Camera v2 lens, 62.2 deg; measure it (PROTOCOL section 5)
 
 camera_node:
   ros__parameters:
     source: camera
-    # OpenCV device index, path or GStreamer pipeline. For the Pi Camera v2 on the Nano's CSI
-    # port use the nvarguscamerasrc pipeline from camera_node's docstring.
-    device: 0
+    # OpenCV device index, path or GStreamer pipeline. The Pi Camera v2 on the Nano's CSI port
+    # is read through Argus (/dev/video0 is raw RG10 Bayer, which OpenCV cannot use); that needs
+    # the container started with --runtime nvidia -v /tmp/argus_socket:/tmp/argus_socket
+    # (docs/PROTOCOL.md section 4). 1640x1232 is the IMX219's full-sensor 4:3 mode: its
+    # 1280x720 and 1920x1080 sensor modes are centre crops, with a narrower HFOV and a VFOV too
+    # small to see the 10 cm marker when docked. A USB camera: device: "0".
+    device: "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM),width=1640,height=1232,framerate=30/1 ! nvvidconv ! video/x-raw,width=640,height=480,format=BGRx ! videoconvert ! video/x-raw,format=BGR ! appsink drop=true max-buffers=1"
     width: 640
     height: 480
     fps: 30.0
