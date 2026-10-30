@@ -1,0 +1,8 @@
+sim_work/v2/runs/bc/policy.onnx: 0 subnormal of 11303554 float32 weights
+sim_work/v2sw/runs/bc/policy.onnx: 0 subnormal of 11303554 float32 weights
+sim_work/v4/runs/bc/policy.onnx: 0 subnormal of 11303554 float32 weights
+sim_work/v4_62/runs/bc/policy.onnx: 0 subnormal of 11303554 float32 weights
+sim_work/v2/runs/bc/policy.onnx: 1 thread, 300 runs: p50 35.97  p90 49.58  p99 61.84 ms
+sim_work/v2sw/runs/bc/policy.onnx: 1 thread, 300 runs: p50 35.67  p90 46.77  p99 61.70 ms
+sim_work/v4/runs/bc/policy.onnx: 1 thread, 300 runs: p50 35.92  p90 47.07  p99 58.72 ms
+sim_work/v4_62/runs/bc/policy.onnx: 1 thread, 300 runs: p50 35.83  p90 46.50  p99 59.38 ms

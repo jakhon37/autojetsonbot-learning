@@ -1,0 +1,38 @@
+pin_t0         n=2155  pre   8.3/ 13.3/ 20.0  inf  62.7/ 84.4/111.8  tot  73.2/ 98.1/127.4  age  66.7/ 90.7/186.9  int p99 146.9 (>150: 20 of 2133)  zeros 26/2169 ticks (1.20 %)  episodes 10 {'success': 9, 'fail': 1}, with a fallback zero in the last 1 s: 0
+pin_t2         n=2151  pre   4.9/  6.7/  8.8  inf  22.6/ 30.5/ 40.7  tot  28.5/ 37.3/ 47.9  age  62.4/ 63.1/ 82.9  int p99 118.4 (>150: 0 of 2140)  zeros 0/2150 ticks (0.00 %)  episodes 10 {'success': 9, 'fail': 1}, with a fallback zero in the last 1 s: 0
+free_t0        n=2183  pre   5.2/  7.6/ 10.9  inf  19.3/ 36.4/ 56.6  tot  26.5/ 44.2/ 65.9  age  34.3/ 74.2/ 77.2  int p99 137.9 (>150: 5 of 2173)  zeros 0/2183 ticks (0.00 %)  episodes 10 {'success': 9, 'fail': 1}, with a fallback zero in the last 1 s: 0
+
+Run 2, after the review (e2e_analyze.py with one line per episode; intervals from integer ns):
+pin_t0_r2      n=2301  pre   8.0/ 14.0/ 19.7  inf  64.2/ 84.9/109.4  tot  74.5/ 98.6/126.5  age  57.3/ 97.3/185.0  int p99 149.5 (>150: 23 of 2278)  zeros 22/2310 ticks (0.95 %)  episodes 10 {'success': 8, 'fail': 2}, with a fallback zero in the last 1 s: 0
+  pose 0 round 1: success fallback zeros 1 / 138, in the last 1 s 0, flagged 0
+  pose 1 round 1: fail    fallback zeros 5 / 299, in the last 1 s 0, flagged 0
+  pose 2 round 1: success fallback zeros 1 / 175, in the last 1 s 0, flagged 0
+  pose 3 round 1: success fallback zeros 5 / 246, in the last 1 s 0, flagged 0
+  pose 4 round 1: success fallback zeros 0 / 221, in the last 1 s 0, flagged 0
+  pose 5 round 1: fail    fallback zeros 4 / 299, in the last 1 s 0, flagged 0
+  pose 6 round 1: success fallback zeros 1 / 225, in the last 1 s 0, flagged 0
+  pose 7 round 1: success fallback zeros 2 / 293, in the last 1 s 0, flagged 0
+  pose 8 round 1: success fallback zeros 1 / 172, in the last 1 s 0, flagged 0
+  pose 9 round 1: success fallback zeros 2 / 242, in the last 1 s 0, flagged 0
+pin_t2_r2      n=2215  pre   5.0/  7.3/ 11.9  inf  27.2/ 35.7/ 47.2  tot  33.7/ 43.2/ 55.1  age  36.3/ 76.3/ 76.8  int p99 121.3 (>150: 2 of 2195)  zeros 1/2206 ticks (0.05 %)  episodes 10 {'success': 9, 'fail': 1}, with a fallback zero in the last 1 s: 0
+  pose 0 round 1: success fallback zeros 0 / 135, in the last 1 s 0, flagged 0
+  pose 1 round 1: success fallback zeros 0 / 288, in the last 1 s 0, flagged 0
+  pose 2 round 1: success fallback zeros 0 / 180, in the last 1 s 0, flagged 0
+  pose 3 round 1: success fallback zeros 0 / 187, in the last 1 s 0, flagged 0
+  pose 4 round 1: success fallback zeros 1 / 166, in the last 1 s 0, flagged 0
+  pose 5 round 1: fail    fallback zeros 0 / 300, in the last 1 s 0, flagged 0
+  pose 6 round 1: success fallback zeros 0 / 230, in the last 1 s 0, flagged 0
+  pose 7 round 1: success fallback zeros 0 / 293, in the last 1 s 0, flagged 0
+  pose 8 round 1: success fallback zeros 0 / 164, in the last 1 s 0, flagged 0
+  pose 9 round 1: success fallback zeros 0 / 263, in the last 1 s 0, flagged 0
+free_t0_r2     n=2214  pre   4.9/  7.2/ 12.4  inf  25.1/ 44.2/ 66.0  tot  31.9/ 52.6/ 75.6  age  53.4/ 79.8/ 81.5  int p99 145.3 (>150: 14 of 2204)  zeros 0/2214 ticks (0.00 %)  episodes 10 {'success': 9, 'fail': 1}, with a fallback zero in the last 1 s: 0
+  pose 0 round 1: success fallback zeros 0 / 131, in the last 1 s 0, flagged 0
+  pose 1 round 1: success fallback zeros 0 / 205, in the last 1 s 0, flagged 0
+  pose 2 round 1: success fallback zeros 0 / 242, in the last 1 s 0, flagged 0
+  pose 3 round 1: success fallback zeros 0 / 191, in the last 1 s 0, flagged 0
+  pose 4 round 1: success fallback zeros 0 / 186, in the last 1 s 0, flagged 0
+  pose 5 round 1: fail    fallback zeros 0 / 301, in the last 1 s 0, flagged 0
+  pose 6 round 1: success fallback zeros 0 / 228, in the last 1 s 0, flagged 0
+  pose 7 round 1: success fallback zeros 0 / 297, in the last 1 s 0, flagged 0
+  pose 8 round 1: success fallback zeros 0 / 178, in the last 1 s 0, flagged 0
+  pose 9 round 1: success fallback zeros 0 / 255, in the last 1 s 0, flagged 0

@@ -3,8 +3,9 @@
     backend = create_backend("onnxruntime", "/models/bc/policy.onnx")
     action = backend.infer(x)      # x: float32 [1, 3, 224, 224] -> float32 [1, 2]
 
-Backends: ``onnxruntime`` (CUDA provider when present, else CPU), ``tensorrt`` (TensorRT 8.x
-engine on the Jetson), ``torch`` (TorchScript file) and ``constant`` (fixed action, for tests).
+Backends: ``onnxruntime`` (CUDA provider when present, else CPU; ``intra_op_threads=N`` sizes
+its CPU thread pool, 0 = ONNX Runtime's default), ``tensorrt`` (TensorRT 8.x engine on the
+Jetson), ``torch`` (TorchScript file) and ``constant`` (fixed action, for tests).
 Each heavy dependency is imported only by the backend that needs it, so this module imports
 with numpy + OpenCV alone.
 
@@ -83,13 +84,25 @@ class ConstantBackend(Backend):
 
 
 class OnnxRuntimeBackend(Backend):
-    """ONNX Runtime session; uses the CUDA provider when the installed build has it."""
+    """ONNX Runtime session; uses the CUDA provider when the installed build has it.
+
+    ``intra_op_threads`` sizes ONNX Runtime's intra-op thread pool. 0 creates the session
+    exactly as before the option existed, with ONNX Runtime's default: on Linux (1.31) one
+    thread per physical core of the host, the workers pinned one per core and spinning after
+    each run. A container limited to fewer cores (docker --cpuset-cpus) does not change that
+    count, so the pool oversubscribes the cores it may use, and the pin to a core outside the
+    set fails ("pthread_setaffinity_np failed ... Specify the number of threads explicitly").
+    N > 0 makes a pool of N threads (the caller's included), which ONNX Runtime does not pin.
+    """
 
     name = "onnxruntime"
     DEFAULT_PROVIDERS = ("CUDAExecutionProvider", "CPUExecutionProvider")
 
-    def __init__(self, model_path: str, providers: Optional[Sequence[str]] = None) -> None:
+    def __init__(
+        self, model_path: str, providers: Optional[Sequence[str]] = None, intra_op_threads: int = 0
+    ) -> None:
         super().__init__()
+        self.intra_op_threads = _intra_op_threads(intra_op_threads)
         try:
             import onnxruntime as ort
         except ImportError as exc:
@@ -102,13 +115,20 @@ class OnnxRuntimeBackend(Backend):
         use = [p for p in wanted if p in available]
         if not use:
             raise RuntimeError("none of the providers %s is available (have %s)" % (wanted, available))
-        self._session = ort.InferenceSession(model_path, providers=use)
+        if self.intra_op_threads:
+            options = ort.SessionOptions()
+            options.intra_op_num_threads = self.intra_op_threads
+            self._session = ort.InferenceSession(model_path, sess_options=options, providers=use)
+        else:  # ONNX Runtime's own defaults, as every run up to v4 used them
+            self._session = ort.InferenceSession(model_path, providers=use)
         inputs, outputs = self._session.get_inputs(), self._session.get_outputs()
         self._input = _pick_io(inputs, INPUT_NAME, "input")
         self._output = _pick_io(outputs, OUTPUT_NAME, "output").name
         _check_static_dims(self._input.shape, INPUT_SHAPE, "ONNX input %r" % self._input.name)
         self.providers = self._session.get_providers()
         self.description = "onnxruntime %s %s" % (ort.__version__, ",".join(self.providers))
+        if self.intra_op_threads:
+            self.description += ", %d intra-op threads" % self.intra_op_threads
 
     def _infer(self, x: np.ndarray) -> np.ndarray:
         return self._session.run([self._output], {self._input.name: x})[0]
@@ -373,6 +393,15 @@ def _make_cuda_memory() -> Any:
     )
 
 
+def _intra_op_threads(value: Any) -> int:
+    """ONNX Runtime intra-op thread count: an int >= 0 (0 = ONNX Runtime's default)."""
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 0:
+        raise ValueError(
+            "intra_op_threads must be an integer >= 0 (0 = ONNX Runtime's default), got %r" % (value,)
+        )
+    return int(value)
+
+
 def _pick_io(entries: Sequence[Any], preferred: str, kind: str) -> Any:
     for entry in entries:
         if entry.name == preferred:
@@ -479,16 +508,20 @@ def create_backend(
     constant_action: Sequence[float] = (0.0, 0.0),
     providers: Optional[Sequence[str]] = None,
     torch_device: str = "auto",
+    intra_op_threads: int = 0,
 ) -> Backend:
     """Backend by name (see BACKEND_NAMES).
 
     Model-backed backends check policy_meta.json first; ``backend.meta`` is None when the file
     is absent (the caller decides whether to warn) and ``backend.meta_checked`` lists the
-    fields that were verified.
+    fields that were verified. ``intra_op_threads`` sizes the onnxruntime backend's intra-op
+    thread pool (0 = ONNX Runtime's default; see OnnxRuntimeBackend); the other backends
+    ignore it, but a negative value is refused for every backend.
     """
     key = name.strip().lower()
     if key not in BACKEND_NAMES:
         raise ValueError("unknown backend %r (choose from %s)" % (name, ", ".join(BACKEND_NAMES)))
+    intra_op_threads = _intra_op_threads(intra_op_threads)
     if key == "constant":
         return ConstantBackend(constant_action)
     if not model_path:
@@ -498,7 +531,7 @@ def create_backend(
     meta = load_policy_meta(model_path)
     checked = check_policy_meta(meta) if meta is not None else []
     if key == "onnxruntime":
-        backend: Backend = OnnxRuntimeBackend(model_path, providers)
+        backend: Backend = OnnxRuntimeBackend(model_path, providers, intra_op_threads)
     elif key == "torch":
         backend = TorchBackend(model_path, torch_device)
     else:

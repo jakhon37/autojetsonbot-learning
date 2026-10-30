@@ -327,6 +327,8 @@ def test_policy_runner_zeroes_stale_future_and_missing_images(graph):
 def test_policy_runner_rejects_bad_parameters(graph, tmp_path):
     with pytest.raises(ValueError, match="image_reliability"):
         runner(graph, image_reliability="sometimes")
+    with pytest.raises(ValueError, match="intra_op_threads"):
+        runner(graph, intra_op_threads=-1)
     with pytest.raises(ValueError, match="unknown backend"):
         runner(graph, backend="tflite")
     model = tmp_path / "policy.onnx"
@@ -346,6 +348,24 @@ def test_policy_runner_rejects_bad_parameters(graph, tmp_path):
     )
     assert proc.returncode == 1
     assert b"cannot start: model file not found" in proc.stdout and b"Traceback" not in proc.stdout
+
+
+@pytest.mark.parametrize("threads", [None, 3])
+def test_policy_runner_passes_intra_op_threads_to_the_backend(graph, monkeypatch, threads):
+    import jbl_nodes.policy_runner as policy_runner_module
+
+    seen = []
+    real = policy_runner_module.create_backend
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(policy_runner_module, "create_backend", spy)
+    node = runner(graph) if threads is None else runner(graph, intra_op_threads=threads)
+    expected = 0 if threads is None else threads  # 0: ONNX Runtime's own default, as before
+    assert node.get_parameter("intra_op_threads").value == expected
+    assert [kwargs["intra_op_threads"] for kwargs in seen] == [expected]
 
 
 def test_late_runner_gets_the_start_and_honours_method_filter(graph):

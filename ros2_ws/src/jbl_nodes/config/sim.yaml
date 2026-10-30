@@ -38,3 +38,9 @@ policy_runner:
     image_topic: /camera/image_raw/compressed
     rate_hz: 10.0
     max_image_age: 0.2
+    # ONNX Runtime intra-op threads (onnxruntime backend). Every run up to v4 (the clean run, v2,
+    # v3, v4) ran WITHOUT this line, i.e. with 0 = ONNX Runtime's default: a pool sized from the
+    # host's cores (4), workers pinned and spinning, also inside v4's 3-core SIM_CPUSET, which it
+    # oversubscribed; v4's inference ran 2-3x slower than v3's (results/sim_eval_v4_cleanstop/
+    # exploratory/TIMING.md). 2 gave v3-like latency in that cpuset. Set 0 to reproduce v4.
+    intra_op_threads: 2

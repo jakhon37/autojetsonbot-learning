@@ -33,7 +33,8 @@
 # pins the simulation container to those cores (docker run --cpuset-cpus; empty = not pinned).
 # Each stage's $WORK/logs/<distro>/<stage>.provenance records the commit, the paths that differ
 # from it (outside results/, and tracked under results/), the lens, SIM_CPUSET (the container
-# stages), /proc/loadavg at its start and end, and the stop rules and lens the running nodes report.
+# stages), /proc/loadavg at its start and end, and the stop rules and lens the running nodes report
+# (with the policy controller, also policy_runner's intra_op_threads).
 set -euo pipefail
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -99,12 +100,19 @@ run_episode() {
   sleep 1  # let the controller's final zero and the gate settle before the next teleport
 }
 
-# node.param ... -> "node.param: value" lines, as the running nodes report them (provenance)
+# node.param ... -> "node.param: value" lines, as the running nodes report them (provenance).
+# Each query is tried up to 5 times: without the daemon, a query sometimes does not discover a
+# running node within its spin time ("Node not found"), more often with several at once on few
+# cores (v4's noise segment lost servo_baseline.hfov_rad that way).
 node_params() {
   local spec pids=() dir
   dir=$(mktemp -d)
   for spec in "$@"; do
-    { ros2 param get --no-daemon --spin-time 2 --hide-type "/${spec%%.*}" "${spec#*.}" > "$dir/$spec" 2>&1 || true; } &
+    { for attempt in 1 2 3 4 5; do
+        ros2 param get --no-daemon --spin-time 2 --hide-type "/${spec%%.*}" "${spec#*.}" > "$dir/$spec" 2>&1 || true
+        grep -q 'Node not found' "$dir/$spec" || break
+        [ "$attempt" = 5 ] || sleep 1
+      done; } &
     pids+=($!)
   done
   wait "${pids[@]}" || true
@@ -150,6 +158,8 @@ inner_trials() {
   wait_for_nodes fake_robot safety_gate dock_judge trial_logger "$controller_node"
   local reported=(dock_judge.request_still_v dock_judge.hfov_rad fake_robot.camera_hfov_rad)
   [ "$CONTROLLER" = servo ] && reported+=(servo_baseline.stop_hysteresis servo_baseline.hfov_rad)
+  # ONNX Runtime's thread pool: 0 (its default, every run up to v4) or the explicit size
+  [ "$CONTROLLER" = policy ] && reported+=(policy_runner.intra_op_threads)
   node_params "${reported[@]}" > "$PARAMS_LOG"
   sleep 3  # the recorder subscribes to new topics on its next poll
   local round pose

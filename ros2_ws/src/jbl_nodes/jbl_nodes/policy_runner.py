@@ -25,6 +25,15 @@ Parameters
     max_image_age     0.2 s
     enabled_on_start  false
     constant_action   [0.0, 0.0]  normalised action of the constant backend
+    intra_op_threads  0   ONNX Runtime intra-op threads (onnxruntime backend only; the others
+                      ignore it). 0 = ONNX Runtime's default, as every run before this parameter:
+                      one thread per physical core of the HOST, workers pinned one per core.
+                      A container limited to fewer cores (docker --cpuset-cpus) does not lower
+                      that count, so the pool oversubscribes its cores; in v4's 3-core
+                      SIM_CPUSET inference ran 2-3x slower than unpinned (log line
+                      "pthread_setaffinity_np failed"; results/sim_eval_v4_cleanstop/
+                      exploratory/TIMING.md). N > 0: N threads including the caller, not pinned;
+                      keep N below the cores the node may use. config/sim.yaml sets it.
     method_filter     ""  comma-separated methods whose "start" enables this runner (empty: any);
                       a "start" for another method disables it
     image_reliability auto | best_effort | reliable. auto = best effort for compressed frames
@@ -81,6 +90,7 @@ class PolicyRunner(Node):
         self._max_age_ns = int(float(self.declare_parameter("max_image_age", 0.2).value) * 1e9)
         self._enabled = bool(self.declare_parameter("enabled_on_start", False).value)
         constant_action = [float(v) for v in self.declare_parameter("constant_action", [0.0, 0.0]).value]
+        intra_op_threads = int(self.declare_parameter("intra_op_threads", 0).value)
         method_filter = str(self.declare_parameter("method_filter", "").value)
         self._methods = [m.strip() for m in method_filter.split(",") if m.strip()]
         reliability = str(self.declare_parameter("image_reliability", "auto").value)
@@ -88,8 +98,14 @@ class PolicyRunner(Node):
             raise ValueError("rate_hz and max_image_age must be positive")
         if reliability not in ("auto",) + tuple(RELIABILITY):
             raise ValueError("image_reliability must be auto, best_effort or reliable, got %r" % reliability)
+        if intra_op_threads < 0:
+            raise ValueError(
+                "intra_op_threads must be >= 0 (0 = ONNX Runtime's default), got %d" % intra_op_threads
+            )
 
-        self._backend = create_backend(backend_name, model_path, constant_action=constant_action)
+        self._backend = create_backend(
+            backend_name, model_path, constant_action=constant_action, intra_op_threads=intra_op_threads
+        )
         self._report_backend(model_path)
         self._warm_up()
 

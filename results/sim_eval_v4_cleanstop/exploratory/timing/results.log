@@ -1,0 +1,156 @@
+2026-10-29T21:17:07Z === matrix start: N=400 WARM=20, image jbl_timing_tmp:v1 (sha256:ae6650f848b9)
+2026-10-29T21:17:07Z container jbl_timing_free: cpuset '', ROS_DOMAIN_ID 87
+2026-10-29T21:17:08Z container jbl_timing_pin: cpuset '0-2', ROS_DOMAIN_ID 88
+2026-10-29T21:17:11Z   host: {"window_s": 3.0, "host_busy_cores": 0.089, "containers": {"f535b2436d3c": 0.051, "8eb982ec0a51": 0.0}, "other_cores": 0.038, "loadavg": "0.61 0.75 0.64 1/157 25091"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:17:11Z RUN idle_free_tdefault (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:17:54Z   done idle_free_tdefault: container 1.876 cores over the run; "infer_ms": {"p50": 15.32, "p90": 20.11, "p99": 44.85, "mean": 16.36, "max": 78.01}
+2026-10-29T21:17:58Z   host: {"window_s": 3.0, "host_busy_cores": 0.017, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.017, "loadavg": "1.79 1.06 0.75 1/162 25248"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:17:58Z RUN idle_free_t1 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 1, spin default)
+2026-10-29T21:18:41Z   done idle_free_t1: container 0.481 cores over the run; "infer_ms": {"p50": 37.55, "p90": 53.29, "p99": 60.14, "mean": 40.76, "max": 70.48}
+2026-10-29T21:18:45Z   host: {"window_s": 3.0, "host_busy_cores": 0.076, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.076, "loadavg": "1.16 1.00 0.74 1/164 25394"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:18:45Z RUN idle_free_t2 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:19:28Z   done idle_free_t2: container 0.946 cores over the run; "infer_ms": {"p50": 21.97, "p90": 30.38, "p99": 38.37, "mean": 23.71, "max": 70.53}
+2026-10-29T21:19:31Z   host: {"window_s": 3.0, "host_busy_cores": 0.023, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.023, "loadavg": "1.01 1.00 0.76 2/161 25610"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:19:31Z RUN idle_free_t3 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T21:20:15Z   done idle_free_t3: container 1.396 cores over the run; "infer_ms": {"p50": 17.83, "p90": 23.35, "p99": 31.16, "mean": 18.17, "max": 38.38}
+2026-10-29T21:20:18Z   host: {"window_s": 3.0, "host_busy_cores": 0.016, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.016, "loadavg": "1.05 0.99 0.76 1/165 25751"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:20:18Z RUN idle_free_t4 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 4, spin default)
+2026-10-29T21:21:02Z   done idle_free_t4: container 1.822 cores over the run; "infer_ms": {"p50": 14.71, "p90": 19.08, "p99": 26.51, "mean": 14.99, "max": 45.05}
+2026-10-29T21:21:05Z   host: {"window_s": 3.0, "host_busy_cores": 0.01, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.01, "loadavg": "0.50 0.85 0.72 1/161 25880"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:21:05Z RUN idle_pin_tdefault (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:21:49Z   done idle_pin_tdefault: container 2.194 cores over the run; "infer_ms": {"p50": 34.49, "p90": 40.23, "p99": 64.51, "mean": 36.41, "max": 82.88}
+  ORT: [1;31m2026-10-29 21:21:06.715134869 [E:onnxruntime:Default, env.cc:374 ThreadMain] pthread_setaffinity_np failed for thread: 39, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument. Specify the number of threads explicitly so the affinity
+2026-10-29T21:21:52Z   host: {"window_s": 3.0, "host_busy_cores": 0.013, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.013, "loadavg": "2.23 1.28 0.88 1/161 26035"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:21:52Z RUN idle_pin_t1 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 1, spin default)
+2026-10-29T21:22:36Z   done idle_pin_t1: container 0.465 cores over the run; "infer_ms": {"p50": 36.52, "p90": 51.07, "p99": 61.16, "mean": 39.43, "max": 65.91}
+2026-10-29T21:22:39Z   host: {"window_s": 3.0, "host_busy_cores": 0.012, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.012, "loadavg": "1.24 1.16 0.86 1/158 26155"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:22:39Z RUN idle_pin_t2 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:23:23Z   done idle_pin_t2: container 0.953 cores over the run; "infer_ms": {"p50": 22.38, "p90": 29.58, "p99": 37.81, "mean": 23.92, "max": 60.89}
+2026-10-29T21:23:26Z   host: {"window_s": 3.0, "host_busy_cores": 0.015, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.015, "loadavg": "0.95 1.10 0.86 1/161 26289"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:23:26Z RUN idle_pin_t3 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T21:24:09Z   done idle_pin_t3: container 1.426 cores over the run; "infer_ms": {"p50": 18.67, "p90": 23.85, "p99": 35.79, "mean": 18.97, "max": 50.73}
+2026-10-29T21:24:13Z   host: {"window_s": 3.0, "host_busy_cores": 0.072, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.0}, "other_cores": 0.072, "loadavg": "1.20 1.16 0.89 1/160 26432"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:24:13Z RUN idle_pin_t4 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 4, spin default)
+2026-10-29T21:24:56Z   done idle_pin_t4: container 2.248 cores over the run; "infer_ms": {"p50": 35.59, "p90": 40.84, "p99": 53.06, "mean": 36.49, "max": 62.32}
+2026-10-29T21:25:26Z   sim nodes in jbl_timing_free: /dock_judge /fake_robot /rosbag2_recorder /safety_gate /trial_logger 
+2026-10-29T21:25:41Z   background sim alone in jbl_timing_free: {"window_s": 15.0, "host_busy_cores": 0.558, "containers": {"8eb982ec0a51": 0.516}, "other_cores": 0.042, "loadavg": "1.69 1.43 1.02 1/249 26825"}
+2026-10-29T21:25:44Z   host: {"window_s": 3.0, "host_busy_cores": 0.543, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.535}, "other_cores": 0.008, "loadavg": "1.69 1.43 1.02 1/249 26840"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:25:44Z RUN sim_free_tdefault (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:26:27Z   done sim_free_tdefault: container 2.573 cores over the run; "infer_ms": {"p50": 22.97, "p90": 35.63, "p99": 51.85, "mean": 24.0, "max": 75.03}
+2026-10-29T21:26:31Z   host: {"window_s": 3.0, "host_busy_cores": 0.555, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.53}, "other_cores": 0.025, "loadavg": "3.72 2.03 1.24 1/255 27025"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:26:31Z RUN sim_free_t1 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 1, spin default)
+2026-10-29T21:27:14Z   done sim_free_t1: container 1.009 cores over the run; "infer_ms": {"p50": 38.48, "p90": 52.35, "p99": 59.17, "mean": 41.14, "max": 63.05}
+2026-10-29T21:27:18Z   host: {"window_s": 3.0, "host_busy_cores": 0.497, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.49}, "other_cores": 0.007, "loadavg": "2.30 1.90 1.24 2/250 27193"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:27:18Z RUN sim_free_t2 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:28:01Z   done sim_free_t2: container 1.426 cores over the run; "infer_ms": {"p50": 21.42, "p90": 29.16, "p99": 36.23, "mean": 23.0, "max": 41.85}
+2026-10-29T21:28:04Z   host: {"window_s": 3.0, "host_busy_cores": 0.605, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.522}, "other_cores": 0.083, "loadavg": "2.12 1.92 1.28 1/258 27426"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:28:04Z RUN sim_free_t3 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T21:28:48Z   done sim_free_t3: container 1.9 cores over the run; "infer_ms": {"p50": 18.55, "p90": 25.34, "p99": 33.58, "mean": 19.31, "max": 55.66}
+2026-10-29T21:28:51Z   host: {"window_s": 3.0, "host_busy_cores": 0.561, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.531}, "other_cores": 0.03, "loadavg": "2.36 2.03 1.35 2/260 27639"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:28:51Z RUN sim_free_t4 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 4, spin default)
+2026-10-29T21:29:35Z   done sim_free_t4: container 2.5 cores over the run; "infer_ms": {"p50": 22.17, "p90": 31.19, "p99": 57.38, "mean": 23.38, "max": 91.97}
+2026-10-29T21:29:38Z   host: {"window_s": 3.0, "host_busy_cores": 0.545, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.525}, "other_cores": 0.02, "loadavg": "3.58 2.43 1.52 1/264 27874"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:29:38Z RUN sim_free_tdefault_bcv2 (jbl_timing_free, cpuset '', /models/bc_v2/policy.onnx, threads default, spin default)
+2026-10-29T21:30:22Z   done sim_free_tdefault_bcv2: container 2.421 cores over the run; "infer_ms": {"p50": 21.74, "p90": 34.08, "p99": 48.58, "mean": 23.02, "max": 62.48}
+2026-10-29T21:30:37Z   background sim-after alone in jbl_timing_free: {"window_s": 15.0, "host_busy_cores": 0.576, "containers": {"8eb982ec0a51": 0.531}, "other_cores": 0.045, "loadavg": "3.97 2.90 1.75 4/266 28170"}
+  bag: 67M	/tmp/claude-0/-home-user-jakhon37-github-io/0b7d9207-8513-5bee-961d-b91ee3f0530e/scratchpad/timing_v4/bench/bg_jbl_timing_free
+2026-10-29T21:31:07Z   sim nodes in jbl_timing_pin: /dock_judge /fake_robot /rosbag2_recorder /trial_logger 
+2026-10-29T21:31:23Z   background sim alone in jbl_timing_pin: {"window_s": 15.0, "host_busy_cores": 0.582, "containers": {"f535b2436d3c": 0.526}, "other_cores": 0.056, "loadavg": "2.24 2.61 1.70 4/267 28643"}
+2026-10-29T21:31:26Z   host: {"window_s": 3.0, "host_busy_cores": 0.61, "containers": {"f535b2436d3c": 0.519, "8eb982ec0a51": 0.0}, "other_cores": 0.091, "loadavg": "2.30 2.62 1.71 1/267 28679"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:31:26Z RUN sim_pin_tdefault (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:32:10Z   done sim_pin_tdefault: container 2.785 cores over the run; "infer_ms": {"p50": 58.22, "p90": 85.39, "p99": 111.25, "mean": 59.02, "max": 136.46}
+  ORT: [1;31m2026-10-29 21:31:27.587951188 [E:onnxruntime:Default, env.cc:374 ThreadMain] pthread_setaffinity_np failed for thread: 319, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument. Specify the number of threads explicitly so the affinit
+2026-10-29T21:32:13Z   host: {"window_s": 3.0, "host_busy_cores": 0.538, "containers": {"f535b2436d3c": 0.485, "8eb982ec0a51": 0.0}, "other_cores": 0.053, "loadavg": "4.18 3.10 1.92 1/262 28972"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:32:13Z RUN sim_pin_t1 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 1, spin default)
+2026-10-29T21:32:57Z   done sim_pin_t1: container 1.018 cores over the run; "infer_ms": {"p50": 41.94, "p90": 55.18, "p99": 68.99, "mean": 44.26, "max": 76.14}
+2026-10-29T21:33:00Z   host: {"window_s": 3.0, "host_busy_cores": 0.536, "containers": {"f535b2436d3c": 0.518, "8eb982ec0a51": 0.0}, "other_cores": 0.018, "loadavg": "2.25 2.74 1.85 3/254 29236"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:33:00Z RUN sim_pin_t2 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:33:43Z   done sim_pin_t2: container 1.465 cores over the run; "infer_ms": {"p50": 27.0, "p90": 35.84, "p99": 43.89, "mean": 28.25, "max": 55.0}
+2026-10-29T21:33:47Z   host: {"window_s": 3.0, "host_busy_cores": 0.527, "containers": {"f535b2436d3c": 0.51, "8eb982ec0a51": 0.0}, "other_cores": 0.017, "loadavg": "2.63 2.70 1.88 2/255 29426"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:33:47Z RUN sim_pin_t3 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T21:34:31Z   done sim_pin_t3: container 2.198 cores over the run; "infer_ms": {"p50": 37.15, "p90": 48.29, "p99": 58.63, "mean": 37.91, "max": 67.45}
+2026-10-29T21:34:34Z   host: {"window_s": 3.0, "host_busy_cores": 0.559, "containers": {"f535b2436d3c": 0.541, "8eb982ec0a51": 0.0}, "other_cores": 0.018, "loadavg": "4.38 3.19 2.09 1/257 29622"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:34:34Z RUN sim_pin_t4 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 4, spin default)
+2026-10-29T21:35:18Z   done sim_pin_t4: container 2.76 cores over the run; "infer_ms": {"p50": 48.49, "p90": 92.8, "p99": 131.25, "mean": 57.87, "max": 209.57}
+2026-10-29T21:35:22Z   host: {"window_s": 3.0, "host_busy_cores": 0.521, "containers": {"f535b2436d3c": 0.506, "8eb982ec0a51": 0.0}, "other_cores": 0.015, "loadavg": "4.97 3.62 2.30 3/260 29815"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:35:22Z RUN sim_pin_tdefault_bcv2 (jbl_timing_pin, cpuset '0-2', /models/bc_v2/policy.onnx, threads default, spin default)
+2026-10-29T21:36:05Z   done sim_pin_tdefault_bcv2: container 2.731 cores over the run; "infer_ms": {"p50": 46.53, "p90": 72.57, "p99": 88.3, "mean": 51.89, "max": 111.26}
+  ORT: [1;31m2026-10-29 21:35:23.436515063 [E:onnxruntime:Default, env.cc:374 ThreadMain] pthread_setaffinity_np failed for thread: 460, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument. Specify the number of threads explicitly so the affinit
+2026-10-29T21:36:09Z   host: {"window_s": 3.0, "host_busy_cores": 0.505, "containers": {"f535b2436d3c": 0.489, "8eb982ec0a51": 0.0}, "other_cores": 0.016, "loadavg": "5.27 3.93 2.47 1/256 30013"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:36:09Z RUN sim_pin_tdefault_nospin (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads default, spin 0)
+2026-10-29T21:36:52Z   done sim_pin_tdefault_nospin: container 1.033 cores over the run; "infer_ms": {"p50": 22.98, "p90": 29.13, "p99": 35.0, "mean": 23.86, "max": 48.97}
+  ORT: [1;31m2026-10-29 21:36:10.412078997 [E:onnxruntime:Default, env.cc:374 ThreadMain] pthread_setaffinity_np failed for thread: 489, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument. Specify the number of threads explicitly so the affinit
+2026-10-29T21:37:07Z   background sim-after alone in jbl_timing_pin: {"window_s": 15.0, "host_busy_cores": 0.524, "containers": {"f535b2436d3c": 0.501}, "other_cores": 0.023, "loadavg": "3.22 3.60 2.45 2/250 30213"}
+  bag: 76M	/tmp/claude-0/-home-user-jakhon37-github-io/0b7d9207-8513-5bee-961d-b91ee3f0530e/scratchpad/timing_v4/bench/bg_jbl_timing_pin
+2026-10-29T21:37:27Z   background busy alone in jbl_timing_free: {"window_s": 15.0, "host_busy_cores": 1.578, "containers": {"8eb982ec0a51": 1.554}, "other_cores": 0.024, "loadavg": "2.87 3.50 2.44 2/172 30396"}
+2026-10-29T21:37:30Z   host: {"window_s": 3.0, "host_busy_cores": 1.567, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 1.557}, "other_cores": 0.01, "loadavg": "2.87 3.50 2.44 3/172 30412"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:37:31Z RUN busy_free_tdefault (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:38:14Z   done busy_free_tdefault: container 3.548 cores over the run; "infer_ms": {"p50": 47.64, "p90": 67.04, "p99": 85.3, "mean": 49.58, "max": 102.1}
+2026-10-29T21:38:17Z   host: {"window_s": 3.0, "host_busy_cores": 1.574, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 1.564}, "other_cores": 0.01, "loadavg": "4.80 3.94 2.65 3/168 30554"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:38:17Z RUN busy_free_t1 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 1, spin default)
+2026-10-29T21:39:01Z   done busy_free_t1: container 2.042 cores over the run; "infer_ms": {"p50": 38.14, "p90": 52.23, "p99": 61.4, "mean": 40.82, "max": 78.74}
+2026-10-29T21:39:04Z   host: {"window_s": 3.0, "host_busy_cores": 1.575, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 1.559}, "other_cores": 0.016, "loadavg": "3.05 3.60 2.59 3/169 30697"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:39:04Z RUN busy_free_t2 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:39:48Z   done busy_free_t2: container 2.524 cores over the run; "infer_ms": {"p50": 23.57, "p90": 30.41, "p99": 40.8, "mean": 24.72, "max": 84.95}
+2026-10-29T21:39:51Z   host: {"window_s": 3.0, "host_busy_cores": 1.562, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 1.548}, "other_cores": 0.014, "loadavg": "3.14 3.53 2.62 3/170 30834"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:39:51Z RUN busy_free_t3 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T21:40:35Z   done busy_free_t3: container 3.003 cores over the run; "infer_ms": {"p50": 27.55, "p90": 39.13, "p99": 53.09, "mean": 28.54, "max": 65.35}
+2026-10-29T21:40:37Z   busy pid 516: 205.8 s wall, 148.3 s CPU, 0.72 cores busy pid 517: 205.8 s wall, 148.5 s CPU, 0.72 cores 
+2026-10-29T21:40:55Z   background busy alone in jbl_timing_pin: {"window_s": 15.0, "host_busy_cores": 1.577, "containers": {"f535b2436d3c": 1.565}, "other_cores": 0.012, "loadavg": "2.86 3.43 2.65 2/170 31054"}
+2026-10-29T21:40:58Z   host: {"window_s": 3.0, "host_busy_cores": 1.586, "containers": {"f535b2436d3c": 1.572, "8eb982ec0a51": 0.0}, "other_cores": 0.014, "loadavg": "2.79 3.41 2.65 3/167 31071"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:40:58Z RUN busy_pin_tdefault (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:41:42Z   done busy_pin_tdefault: container 2.936 cores over the run; "infer_ms": {"p50": 64.89, "p90": 80.14, "p99": 94.93, "mean": 65.22, "max": 99.01}
+  ORT: [1;31m2026-10-29 21:41:00.127475187 [E:onnxruntime:Default, env.cc:374 ThreadMain] pthread_setaffinity_np failed for thread: 551, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument. Specify the number of threads explicitly so the affinit
+2026-10-29T21:41:45Z   host: {"window_s": 3.0, "host_busy_cores": 1.591, "containers": {"f535b2436d3c": 1.571, "8eb982ec0a51": 0.0}, "other_cores": 0.02, "loadavg": "5.41 4.02 2.89 2/164 31216"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:41:45Z RUN busy_pin_t1 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 1, spin default)
+2026-10-29T21:42:29Z   done busy_pin_t1: container 2.059 cores over the run; "infer_ms": {"p50": 38.93, "p90": 53.7, "p99": 60.86, "mean": 42.48, "max": 77.61}
+2026-10-29T21:42:33Z   host: {"window_s": 3.0, "host_busy_cores": 1.579, "containers": {"f535b2436d3c": 1.569, "8eb982ec0a51": 0.0}, "other_cores": 0.01, "loadavg": "3.76 3.80 2.88 3/164 31354"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:42:33Z RUN busy_pin_t2 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:43:16Z   done busy_pin_t2: container 2.425 cores over the run; "infer_ms": {"p50": 31.8, "p90": 42.83, "p99": 55.9, "mean": 32.16, "max": 73.45}
+2026-10-29T21:43:19Z   host: {"window_s": 3.0, "host_busy_cores": 1.575, "containers": {"f535b2436d3c": 1.561, "8eb982ec0a51": 0.0}, "other_cores": 0.014, "loadavg": "3.38 3.70 2.89 3/166 31498"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:43:20Z RUN busy_pin_t3 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T21:44:03Z   done busy_pin_t3: container 2.819 cores over the run; "infer_ms": {"p50": 52.92, "p90": 71.95, "p99": 85.93, "mean": 53.85, "max": 92.24}
+2026-10-29T21:44:05Z   busy pid 524: 206.1 s wall, 134.3 s CPU, 0.65 cores busy pid 523: 206.1 s wall, 134.1 s CPU, 0.65 cores 
+2026-10-29T21:44:34Z   sim nodes in jbl_timing_free: /dock_judge /fake_robot /rosbag2_recorder /safety_gate /trial_logger 
+2026-10-29T21:44:50Z   background sim alone in jbl_timing_free: {"window_s": 15.0, "host_busy_cores": 0.484, "containers": {"8eb982ec0a51": 0.469}, "other_cores": 0.015, "loadavg": "2.33 3.44 2.88 4/251 31888"}
+2026-10-29T21:44:53Z   host: {"window_s": 3.0, "host_busy_cores": 0.483, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.474}, "other_cores": 0.009, "loadavg": "2.38 3.43 2.88 1/250 31904"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:44:53Z RUN rep_sim_free_tdefault (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:45:37Z   done rep_sim_free_tdefault: container 2.521 cores over the run; "infer_ms": {"p50": 26.76, "p90": 36.9, "p99": 50.36, "mean": 26.85, "max": 58.78}
+2026-10-29T21:45:40Z   host: {"window_s": 3.0, "host_busy_cores": 0.494, "containers": {"f535b2436d3c": 0.0, "8eb982ec0a51": 0.481}, "other_cores": 0.013, "loadavg": "1.80 3.12 2.80 1/248 32049"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:45:40Z RUN rep_sim_free_t2 (jbl_timing_free, cpuset '', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:46:23Z   done rep_sim_free_t2: container 1.41 cores over the run; "infer_ms": {"p50": 23.86, "p90": 30.58, "p99": 41.49, "mean": 24.81, "max": 51.83}
+  bag: 27M	/tmp/claude-0/-home-user-jakhon37-github-io/0b7d9207-8513-5bee-961d-b91ee3f0530e/scratchpad/timing_v4/bench/bg_jbl_timing_free
+2026-10-29T21:46:54Z   sim nodes in jbl_timing_pin: /dock_judge /fake_robot /rosbag2_recorder /trial_logger 
+2026-10-29T21:47:09Z   background sim alone in jbl_timing_pin: {"window_s": 15.0, "host_busy_cores": 0.495, "containers": {"f535b2436d3c": 0.483}, "other_cores": 0.012, "loadavg": "1.04 2.59 2.65 2/247 32516"}
+2026-10-29T21:47:12Z   host: {"window_s": 3.0, "host_busy_cores": 0.51, "containers": {"f535b2436d3c": 0.487, "8eb982ec0a51": 0.0}, "other_cores": 0.023, "loadavg": "1.03 2.57 2.64 1/248 32535"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:47:12Z RUN rep_sim_pin_tdefault (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T21:47:56Z   done rep_sim_pin_tdefault: container 2.795 cores over the run; "infer_ms": {"p50": 61.76, "p90": 81.83, "p99": 97.89, "mean": 61.87, "max": 110.01}
+  ORT: [1;31m2026-10-29 21:47:14.327266252 [E:onnxruntime:Default, env.cc:374 ThreadMain] pthread_setaffinity_np failed for thread: 801, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument. Specify the number of threads explicitly so the affinit
+2026-10-29T21:48:00Z   host: {"window_s": 3.0, "host_busy_cores": 0.531, "containers": {"f535b2436d3c": 0.517, "8eb982ec0a51": 0.0}, "other_cores": 0.014, "loadavg": "3.19 2.95 2.77 4/251 32704"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T21:48:00Z RUN rep_sim_pin_t2 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T21:48:43Z   done rep_sim_pin_t2: container 1.468 cores over the run; "infer_ms": {"p50": 25.64, "p90": 33.07, "p99": 45.65, "mean": 26.34, "max": 55.37}
+  bag: 27M	/tmp/claude-0/-home-user-jakhon37-github-io/0b7d9207-8513-5bee-961d-b91ee3f0530e/scratchpad/timing_v4/bench/bg_jbl_timing_pin
+2026-10-29T21:48:45Z === matrix end
+2026-10-29T23:27:44Z === matrix start: N=400 WARM=20, image jbl_timing:local (sha256:79c62c4860de)
+2026-10-29T23:27:44Z container jbl_timing_free: cpuset '', ROS_DOMAIN_ID 87
+2026-10-29T23:27:44Z container jbl_timing_pin: cpuset '0-2', ROS_DOMAIN_ID 88
+2026-10-29T23:28:14Z   sim nodes in jbl_timing_pin: /dock_judge /fake_robot /rosbag2_recorder /trial_logger 
+2026-10-29T23:28:29Z   background sim alone in jbl_timing_pin: {"window_s": 15.0, "host_busy_cores": 0.581, "containers": {"a6e791aff076": 0.544}, "other_cores": 0.037, "loadavg": "0.89 0.77 1.27 1/246 27892"}
+2026-10-29T23:28:32Z   host: {"window_s": 3.0, "host_busy_cores": 0.576, "containers": {"a6e791aff076": 0.567, "8375552e585a": 0.0}, "other_cores": 0.009, "loadavg": "0.82 0.75 1.26 1/246 27907"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T23:28:32Z RUN rep_sim_pin_tdefault_r2 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads default, spin default)
+2026-10-29T23:29:16Z   done rep_sim_pin_tdefault_r2: container 2.8 cores over the run; "infer_ms": {"p50": 58.23, "p90": 87.59, "p99": 111.04, "mean": 60.95, "max": 145.32}
+  ORT: [1;31m2026-10-29 23:28:33.909278766 [E:onnxruntime:Default, env.cc:374 ThreadMain] pthread_setaffinity_np failed for thread: 177, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument. Specify the number of threads explicitly so the affinit
+2026-10-29T23:29:19Z   host: {"window_s": 3.0, "host_busy_cores": 0.625, "containers": {"a6e791aff076": 0.568, "8375552e585a": 0.0}, "other_cores": 0.057, "loadavg": "3.60 1.51 1.49 2/250 28077"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T23:29:19Z RUN rep_sim_pin_t3_r2 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T23:30:03Z   done rep_sim_pin_t3_r2: container 2.184 cores over the run; "infer_ms": {"p50": 35.3, "p90": 44.81, "p99": 56.05, "mean": 35.22, "max": 60.82}
+2026-10-29T23:30:07Z   host: {"window_s": 3.0, "host_busy_cores": 0.616, "containers": {"a6e791aff076": 0.581, "8375552e585a": 0.0}, "other_cores": 0.035, "loadavg": "3.11 1.72 1.57 6/248 28217"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T23:30:07Z RUN rep_sim_pin_t2_r2 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T23:30:50Z   done rep_sim_pin_t2_r2: container 1.554 cores over the run; "infer_ms": {"p50": 27.37, "p90": 34.66, "p99": 41.71, "mean": 27.68, "max": 54.66}
+2026-10-29T23:30:54Z   host: {"window_s": 3.0, "host_busy_cores": 0.581, "containers": {"a6e791aff076": 0.566, "8375552e585a": 0.0}, "other_cores": 0.015, "loadavg": "2.58 1.80 1.60 3/249 28356"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T23:30:54Z RUN rep_sim_pin_t3_r3 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 3, spin default)
+2026-10-29T23:31:37Z   done rep_sim_pin_t3_r3: container 1.953 cores over the run; "infer_ms": {"p50": 23.46, "p90": 33.06, "p99": 50.78, "mean": 24.68, "max": 68.74}
+2026-10-29T23:31:41Z   host: {"window_s": 3.0, "host_busy_cores": 0.491, "containers": {"a6e791aff076": 0.482, "8375552e585a": 0.0}, "other_cores": 0.009, "loadavg": "3.13 2.06 1.70 2/246 28502"}; docker ps: jbl_timing_pin jbl_timing_free 
+2026-10-29T23:31:41Z RUN rep_sim_pin_t2_r3 (jbl_timing_pin, cpuset '0-2', /models/bc_v4/policy.onnx, threads 2, spin default)
+2026-10-29T23:32:25Z   done rep_sim_pin_t2_r3: container 1.485 cores over the run; "infer_ms": {"p50": 24.65, "p90": 33.47, "p99": 39.18, "mean": 26.04, "max": 42.74}
+  bag: 55M	/tmp/claude-0/-home-user-jakhon37-github-io/0b7d9207-8513-5bee-961d-b91ee3f0530e/scratchpad/finalize/timing_work/bg_jbl_timing_pin
+2026-10-29T23:32:27Z === matrix end

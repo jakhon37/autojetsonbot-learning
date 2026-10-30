@@ -461,6 +461,7 @@ demonstration bags (item 7); those scripts and outputs are not in git either.
 9. **Margin to the 30 s limit.** Successes at 25 s or later: servo 14 of 97, `bc_v4` 15 of 52
    (8 of its 16 in `wide`), `bc_v4_62` 5 of 23; at 28 s or later: 4, 8 and 2. A different limit
    could change some discordant pairs, in either direction.
+10. **Slow inference, after the review** (post hoc): [exploratory/TIMING.md](exploratory/TIMING.md).
 
 ## What this shows
 

@@ -150,6 +150,17 @@ Stop parameters (`config/sim.yaml` and `config/robot.yaml` set the two marked * 
   another (the timer catches up), which is a fallback zero when the newest image is by then
   older than 0.2 s. Backends: `onnxruntime`, `tensorrt` (TensorRT 8.x on Jetson), `torch`,
   `constant` (for tests).
+- `policy_runner`'s `intra_op_threads` (integer, default 0) sizes the `onnxruntime` backend's
+  intra-op thread pool; the other backends ignore it. 0 keeps ONNX Runtime's default, which
+  every run up to v4 used: one thread per physical core of the **host**, the workers pinned
+  one per core and spinning after each inference. A container limited to fewer cores
+  (`docker run --cpuset-cpus`, `SIM_CPUSET`) does not change that count, so the pool
+  oversubscribes the cores it may use, and the pin to a core outside the set fails (launch log:
+  `pthread_setaffinity_np failed ... Specify the number of threads explicitly`). That made v4's
+  inference (3-core `SIM_CPUSET`) 2–3 times slower than v3's (unpinned)
+  ([TIMING.md](../results/sim_eval_v4_cleanstop/exploratory/TIMING.md)). N > 0 gives N threads,
+  the calling one included, not pinned; keep N below the cores the node may use.
+  `config/sim.yaml` sets it; set 0 there to reproduce v4.
 
 ## Evaluation protocol (`tools/analyze_trials.py`)
 

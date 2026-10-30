@@ -58,7 +58,8 @@
 # pins the simulation container to those cores (docker run --cpuset-cpus; empty = not pinned).
 # Each segment in segments.txt (and so provenance.txt) records the commit, the paths that differ
 # from it (outside results/, and tracked under results/), SIM_CPUSET, /proc/loadavg at its start
-# and end, and the stop rules and lens the running nodes report.
+# and end, and the stop rules and lens the running nodes report (with a policy arm, also
+# policy_runner's intra_op_threads).
 # Exit status 1 when a trial run fails (the remaining conditions are not run) or when a report or
 # the summary table fails (all trials are kept; rerun the same command with --report-only).
 set -euo pipefail
@@ -139,12 +140,19 @@ run_episode() {
   sleep 1
 }
 
-# node.param ... -> "node.param: value" lines, as the running nodes report them (provenance)
+# node.param ... -> "node.param: value" lines, as the running nodes report them (provenance).
+# Each query is tried up to 5 times: without the daemon, a query sometimes does not discover a
+# running node within its spin time ("Node not found"), more often with several at once on few
+# cores (v4's noise segment lost servo_baseline.hfov_rad that way).
 node_params() {
   local spec pids=() dir
   dir=$(mktemp -d)
   for spec in "$@"; do
-    { ros2 param get --no-daemon --spin-time 2 --hide-type "/${spec%%.*}" "${spec#*.}" > "$dir/$spec" 2>&1 || true; } &
+    { for attempt in 1 2 3 4 5; do
+        ros2 param get --no-daemon --spin-time 2 --hide-type "/${spec%%.*}" "${spec#*.}" > "$dir/$spec" 2>&1 || true
+        grep -q 'Node not found' "$dir/$spec" || break
+        [ "$attempt" = 5 ] || sleep 1
+      done; } &
     pids+=($!)
   done
   wait "${pids[@]}" || true
@@ -207,6 +215,8 @@ inner_run() {
   trap "$stop" EXIT
   wait_for_nodes "${nodes[@]}"
   local reported=(dock_judge.request_still_v dock_judge.hfov_rad fake_robot.camera_hfov_rad)
+  # ONNX Runtime's thread pool: 0 (its default, every run up to v4) or the explicit size
+  [ -z "${POLICY_METHOD:-}" ] || reported+=(policy_runner.intra_op_threads)
   if [[ " ${nodes[*]} " == *" servo_baseline "* ]]; then
     reported+=(servo_baseline.stop_hysteresis servo_baseline.hfov_rad)
   fi

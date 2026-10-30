@@ -1,0 +1,75 @@
+2026-10-29T21:50:06Z e2e pin_t0: container cpuset '0-2', intra_op_threads 0
+Summary: 1 package finished [1.85s]
+2026-10-29T21:50:12Z   host before: {"window_s": 3.0, "host_busy_cores": 0.017, "containers": {"c1cb8ed7da18": 0.0}, "other_cores": 0.017, "loadavg": "0.91 2.18 2.51 1/147 911"}; docker ps: jbl_e2e_pin_t0 
+2026-10-29T21:54:51Z   run exit 0; container 2.483 cores over 279 s; loadavg 7.94 5.14 3.64
+2026-10-29T21:54:51Z   startup: onnxruntime 1.31.1 CPUExecutionProvider on /camera/image_raw/compressed
+  ORT: pthread_setaffinity_np failed for thread: 166, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument
+2026-10-29T21:54:51Z   rows: 10; outcomes:       1 fail       9 success 
+2026-10-29T21:54:52Z e2e pin_t2: container cpuset '0-2', intra_op_threads 2
+Summary: 1 package finished [1.99s]
+2026-10-29T21:54:58Z   host before: {"window_s": 3.0, "host_busy_cores": 0.016, "containers": {"d1964accc619": 0.0}, "other_cores": 0.016, "loadavg": "6.87 5.00 3.61 1/151 3513"}; docker ps: jbl_e2e_pin_t2 
+2026-10-29T21:59:29Z   run exit 0; container 1.458 cores over 271 s; loadavg 1.83 3.25 3.23
+2026-10-29T21:59:29Z   startup: 
+2026-10-29T21:59:29Z   rows: 10; outcomes:       1 fail       9 success 
+2026-10-29T21:59:30Z e2e free_t0: container cpuset '', intra_op_threads 0
+Summary: 1 package finished [1.85s]
+2026-10-29T21:59:35Z   host before: {"window_s": 3.0, "host_busy_cores": 0.011, "containers": {"9f855c514e21": 0.0}, "other_cores": 0.011, "loadavg": "1.77 3.21 3.22 1/150 6093"}; docker ps: jbl_e2e_free_t0 
+2026-10-29T22:04:15Z   run exit 0; container 2.353 cores over 279 s; loadavg 4.25 3.55 3.33
+2026-10-29T22:04:15Z   startup: onnxruntime 1.31.1 CPUExecutionProvider on /camera/image_raw/compressed
+2026-10-29T22:04:15Z   rows: 10; outcomes:       1 fail       9 success 
+=== run 2, after the review: run_e2e.sh with the fixed start-up grep, also logging the warm-up, the parameters the nodes reported and every trial
+2026-10-29T23:32:27Z e2e pin_t0_r2: container cpuset '0-2', intra_op_threads 0
+Summary: 1 package finished [1.90s]
+2026-10-29T23:32:33Z   host before: {"window_s": 3.0, "host_busy_cores": 0.059, "containers": {"dea477da5bc0": 0.0}, "other_cores": 0.059, "loadavg": "2.37 2.04 1.72 1/146 28970"}; docker ps: jbl_e2e_pin_t0_r2 
+2026-10-29T23:37:26Z   run exit 0; container 2.505 cores over 293 s; loadavg 8.09 5.39 3.20
+2026-10-29T23:37:26Z   startup: onnxruntime 1.31.1 CPUExecutionProvider on /camera/image_raw/compressed
+2026-10-29T23:37:26Z   warm-up: warm-up inference 87.2 ms
+  ORT: pthread_setaffinity_np failed for thread: 178, index: 2, mask: {3, }, error code: 22 error msg: Invalid argument
+2026-10-29T23:37:26Z   nodes report: dock_judge.request_still_v: 0.005;dock_judge.hfov_rad: 1.396;fake_robot.camera_hfov_rad: 1.396;policy_runner.intra_op_threads: Node not found;
+2026-10-29T23:37:26Z   rows: 10; outcomes:       2 fail       8 success 
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,0,1,success,13.968
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,1,1,fail,30.063
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,2,1,success,17.586
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,3,1,success,24.709
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,4,1,success,22.333
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,5,1,fail,30.043
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,6,1,success,22.580
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,7,1,success,29.548
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,8,1,success,17.296
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,9,1,success,24.321
+2026-10-29T23:37:27Z e2e pin_t2_r2: container cpuset '0-2', intra_op_threads 2
+Summary: 1 package finished [1.96s]
+2026-10-29T23:37:33Z   host before: {"window_s": 3.0, "host_busy_cores": 0.009, "containers": {"af9282df94c9": 0.0}, "other_cores": 0.009, "loadavg": "7.14 5.27 3.19 1/144 31798"}; docker ps: jbl_e2e_pin_t2_r2 
+2026-10-29T23:42:19Z   run exit 0; container 1.527 cores over 286 s; loadavg 2.20 3.46 2.95
+2026-10-29T23:42:19Z   startup: onnxruntime 1.31.1 CPUExecutionProvider, 2 intra-op threads on /camera/image_raw/compressed
+2026-10-29T23:42:19Z   warm-up: warm-up inference 42.4 ms
+2026-10-29T23:42:19Z   nodes report: dock_judge.request_still_v: 0.005;dock_judge.hfov_rad: 1.396;fake_robot.camera_hfov_rad: 1.396;policy_runner.intra_op_threads: 2;
+2026-10-29T23:42:19Z   rows: 10; outcomes:       1 fail       9 success 
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,0,1,success,13.563
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,1,1,success,28.915
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,2,1,success,18.065
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,3,1,success,18.782
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,4,1,success,16.655
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,5,1,fail,30.022
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,6,1,success,23.098
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,7,1,success,29.360
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,8,1,success,16.451
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,9,1,success,26.339
+2026-10-29T23:42:20Z e2e free_t0_r2: container cpuset '', intra_op_threads 0
+Summary: 1 package finished [1.67s]
+2026-10-29T23:42:25Z   host before: {"window_s": 3.0, "host_busy_cores": 0.049, "containers": {"1ff8a7b02670": 0.0}, "other_cores": 0.049, "loadavg": "2.10 3.42 2.94 1/147 2132"}; docker ps: jbl_e2e_free_t0_r2 
+2026-10-29T23:46:59Z   run exit 0; container 2.496 cores over 273 s; loadavg 2.70 3.26 3.02
+2026-10-29T23:46:59Z   startup: onnxruntime 1.31.1 CPUExecutionProvider on /camera/image_raw/compressed
+2026-10-29T23:46:59Z   warm-up: warm-up inference 15.5 ms
+2026-10-29T23:46:59Z   nodes report: dock_judge.request_still_v: 0.005;dock_judge.hfov_rad: 1.396;fake_robot.camera_hfov_rad: 1.396;policy_runner.intra_op_threads: 0;
+2026-10-29T23:46:59Z   rows: 10; outcomes:       1 fail       9 success 
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,0,1,success,13.083
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,1,1,success,20.503
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,2,1,success,24.187
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,3,1,success,19.080
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,4,1,success,18.578
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,5,1,fail,30.066
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,6,1,success,22.760
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,7,1,success,29.735
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,8,1,success,17.761
+  trial (method,pose_id,round,outcome,duration_s): bc_v4,9,1,success,25.535

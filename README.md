@@ -442,6 +442,11 @@ has the design, the predictions and the commands.
   noise cannot toggle the stop and its successful demonstrations end on a commanded stop.
 - **Tools.** `scripts/sim_e2e.sh --hfov 1.0856` records demonstrations through the robot's
   lens; `SIM_CPUSET=0-2` pins the simulation container of `sim_e2e.sh` and `sim_eval.sh`.
+  Added after v4: `config/sim.yaml` sets `policy_runner`'s `intra_op_threads: 2`, because ONNX
+  Runtime's default pool (0, used by v4 and every earlier run) is sized from the host's 4 cores
+  and oversubscribed the 3-core cpuset
+  ([TIMING.md](results/sim_eval_v4_cleanstop/exploratory/TIMING.md)); `intra_op_threads: 0`
+  restores it.
 - **Analysis.** `stop_labels.py bags` writes the largest request of each demonstration's last
   second unrounded, so an exact stop can be read from the CSV. The controllers also send zero
   on stale input, and that stop is not the controller's decision. `sim_eval_summary.py`
@@ -453,7 +458,8 @@ has the design, the predictions and the commands.
   are kept; rerun with `--report-only`), and its provenance counts the paths that differ from
   the commit without the run's own result files.
 - **The numbers above used the old rules.** The clean run, v2 and v3 are reproduced with
-  `request_still_v: 0.02` and `stop_hysteresis: 0.0` (e.g. in `config/sim.yaml`).
+  `request_still_v: 0.02` and `stop_hysteresis: 0.0` (e.g. in `config/sim.yaml`), and
+  `policy_runner`'s `intra_op_threads: 0` (ONNX Runtime's default pool, which they ran with).
 
 ### Clean-stop protocol: results (v4)
 
@@ -506,9 +512,12 @@ What v4 shows:
     (7 / 0, p = 0.016; all 7 on poses 1, 5 and 7).
   - The two BC arms ran in different sessions and trained on 32 and 30 episodes.
 - **Timing.**
-  - Policy inference was 2–3 times slower than in v3 (p50 60–69 ms, p99 116–123 ms), for
-    reasons not investigated. Consistent with that, 37 of 130 policy trials had a fallback zero
-    in their last second, and 21 BC successes are flagged stale.
+  - Policy inference was 2–3 times slower than in v3 (p50 60–69 ms, p99 116–123 ms). An
+    exploratory follow-up after the run traced that to the 3-core cpuset combined with ONNX
+    Runtime's default thread pool
+    ([TIMING.md](results/sim_eval_v4_cleanstop/exploratory/TIMING.md)). Consistent with the slow
+    inference, 37 of 130 policy trials had a fallback zero in their last second, and 21 BC
+    successes are flagged stale; the follow-up reproduced only part of those fallback zeros.
   - Counted as failures, they would leave `bc_v4` at 17/30 in `noise` and `bc_v4_62` at 16/30.
   - An exploratory check made after seeing the data found that in all 21, the policy's own
     requests already met the still rule. Its scripts are in
@@ -536,16 +545,17 @@ HF_HUB_OFFLINE=1 python -m pytest tests ros2_ws/src/jbl_nodes/test -q   # host t
 
 The ROS tests include gtest for the gate logic, launch tests for the gate, nodes on a live graph
 (camera, policy runner, judge, servo, logger, simulator), and the three launch files (a servo
-episode end to end with a bag, a constant policy through the gate, calibration overrides,
-argument errors). The host suite covers bag conversion (synthetic Foxy-layout and Jazzy bags),
-BC training and ONNX export parity, the statistics against statsmodels/scipy, and the analysis.
+episode end to end with a bag, a constant policy through the gate, the simulated policy's
+`sim.yaml` settings, calibration overrides, argument errors). The host suite covers bag
+conversion (synthetic Foxy-layout and Jazzy bags), BC training and ONNX export parity, the
+statistics against statsmodels/scipy, and the analysis.
 
 Last run (October 2026):
 
-- **Containers.** 269 tests on each of Foxy, Humble and Jazzy (with the v4 stop rules), with 0
-  failures and 6 skips. The skipped tests are the ONNX Runtime and TorchScript backend checks;
+- **Containers.** 280 tests on each of Foxy, Humble and Jazzy (with the v4 stop rules), with 0
+  failures and 8 skips. The skipped tests are the ONNX Runtime and TorchScript backend checks;
   the base images have neither package.
-- **Host.** 377 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`.
+- **Host.** 385 passed and 5 skipped. The skipped tests need rclpy or `sensor_msgs`.
 
 ## Limitations
 

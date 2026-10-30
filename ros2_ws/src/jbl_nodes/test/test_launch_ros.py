@@ -199,6 +199,23 @@ def test_sim_dock_servo_episode_end_to_end(probe, launches, tmp_path):
         assert counts.get(topic, 0) > 0, "%s not recorded:\n%s" % (topic, info)
 
 
+def test_sim_dock_policy_runner_gets_the_sim_thread_pool(probe, launches, tmp_path):
+    launch = launches(
+        "sim_dock.launch.py",
+        tmp_path / "launch.log",
+        method="bc",
+        controller="policy",
+        backend="constant",
+        trials_csv=tmp_path / "trials.csv",
+    )
+    assert probe.wait_for_nodes((SIM_NODES - {"servo_baseline"}) | {"policy_runner"}), launch.output()
+    # config/sim.yaml: 2 ONNX Runtime intra-op threads. 0 (ONNX Runtime's default, every run up to
+    # v4) sizes the pool from the host's cores, which oversubscribed v4's 3-core SIM_CPUSET.
+    assert _param(probe, "policy_runner", "intra_op_threads") == (ParameterType.PARAMETER_INTEGER, 2)
+    assert _param(probe, "policy_runner", "method_filter") == (ParameterType.PARAMETER_STRING, "bc")
+    assert launch.stop() == 0, launch.output()
+
+
 def test_robot_policy_constant_backend_drives_through_the_gate(probe, launches, tmp_path):
     extra = tmp_path / "extra.yaml"
     extra.write_text("policy_runner:\n  ros__parameters:\n    constant_action: [0.4, 0.5]\n")

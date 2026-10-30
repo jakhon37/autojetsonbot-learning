@@ -149,3 +149,11 @@ analysis output changed; the edits below are to the text only.
   (the spot-17 source, the Exploratory introduction and the file list). No number changed.
   `SUMMARY.md` sha256 after that edit:
   `49f18a0d4adaf59c6d64535fe8e087b9b645856e7ed22f64da1bad66b8e4db95`.
+- **Timing follow-up, after the review (exploratory, post hoc).** Added
+  [exploratory/TIMING.md](exploratory/TIMING.md), which investigates the slow inference, with its
+  scripts and raw outputs in [exploratory/timing/](exploratory/timing/). The bags and logs were
+  only read. The benchmarks ran on 29 October 2026, 21:17–22:04 UTC, with repeats after that
+  follow-up's review at 23:27–23:47 UTC, after this run, in fresh containers. Appended item 10
+  to the Exploratory section of `SUMMARY.md`, one line pointing to it; no existing text of
+  `SUMMARY.md` changed, and no number or verdict changed. `SUMMARY.md` sha256 after that edit:
+  `ff0f6ec9db2083ab7a70d02984ff87150041ff948c8e1bcd6d45e987e0663642`.

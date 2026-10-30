@@ -1,12 +1,15 @@
 """policy_backends: interface, factory, policy_meta.json checks and each backend.
 
 ONNX Runtime and TorchScript run for real (host venv); TensorRT has no GPU here, so its
-control flow runs against stand-in tensorrt / pycuda / cuda-python modules.
+control flow runs against stand-in tensorrt / pycuda / cuda-python modules. How the ONNX
+Runtime session is configured (intra_op_threads) is also checked against a stand-in
+onnxruntime module, so that part runs in the ROS containers too, which have no ONNX Runtime.
 """
 
 import ctypes
 import importlib.util
 import json
+import os
 import sys
 import types
 
@@ -249,6 +252,103 @@ def test_onnxruntime_rejects_a_model_with_another_input_size(tmp_path):
     onnx.save(helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], ir_version=8), str(path))
     with pytest.raises(ValueError, match="96"):
         pb.create_backend("onnxruntime", str(path))
+
+
+# ---------------------------------------------------------------- ONNX Runtime's thread pool
+
+
+def _fake_onnxruntime(calls):
+    """Stand-in onnxruntime that records how sessions are created (no ONNX Runtime needed)."""
+    ort = types.ModuleType("onnxruntime")
+    ort.__version__ = "0.0-stand-in"
+
+    class SessionOptions(object):
+        def __init__(self):
+            self.intra_op_num_threads = 0
+
+    class _IO(object):
+        def __init__(self, name, shape):
+            self.name, self.shape = name, shape
+
+    class InferenceSession(object):
+        def __init__(self, path, **kwargs):
+            calls.append((path, kwargs))
+            self._providers = list(kwargs["providers"])
+
+        def get_inputs(self):
+            return [_IO("image", list(pb.INPUT_SHAPE))]
+
+        def get_outputs(self):
+            return [_IO("action", [1, 2])]
+
+        def get_providers(self):
+            return self._providers
+
+    ort.SessionOptions = SessionOptions
+    ort.InferenceSession = InferenceSession
+    ort.get_available_providers = lambda: ["CPUExecutionProvider"]
+    return ort
+
+
+def test_onnxruntime_intra_op_threads_reach_the_session(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setitem(sys.modules, "onnxruntime", _fake_onnxruntime(calls))
+    model = tmp_path / "policy.onnx"
+    model.write_bytes(b"")
+
+    default = pb.create_backend("onnxruntime", str(model))
+    # 0 keeps the session exactly as every run before the option made it: no session options.
+    assert calls[-1] == (str(model), {"providers": ["CPUExecutionProvider"]})
+    assert default.intra_op_threads == 0 and "intra-op" not in default.description
+
+    sized = pb.create_backend("onnxruntime", str(model), intra_op_threads=2)
+    assert calls[-1][1]["sess_options"].intra_op_num_threads == 2
+    assert sized.intra_op_threads == 2 and sized.description.endswith(", 2 intra-op threads")
+    assert pb.OnnxRuntimeBackend(str(model), intra_op_threads=np.int64(3)).intra_op_threads == 3
+
+
+@pytest.mark.parametrize("bad", [-1, 1.5, "2", True, None])
+def test_bad_intra_op_threads_are_refused_before_a_session_exists(monkeypatch, tmp_path, bad):
+    calls = []
+    monkeypatch.setitem(sys.modules, "onnxruntime", _fake_onnxruntime(calls))
+    model = tmp_path / "policy.onnx"
+    model.write_bytes(b"")
+    with pytest.raises(ValueError, match="intra_op_threads"):
+        pb.create_backend("onnxruntime", str(model), intra_op_threads=bad)
+    with pytest.raises(ValueError, match="intra_op_threads"):
+        pb.OnnxRuntimeBackend(str(model), intra_op_threads=bad)
+    with pytest.raises(ValueError, match="intra_op_threads"):
+        pb.create_backend("constant", intra_op_threads=bad)
+    assert calls == []
+
+
+def _thread_ids():
+    return {int(t) for t in os.listdir("/proc/self/task")}
+
+
+@needs_torch_ort
+@pytest.mark.skipif(
+    not (os.path.isdir("/proc/self/task") and hasattr(os, "sched_getaffinity")), reason="needs Linux /proc"
+)
+@pytest.mark.parametrize("threads", [1, 2])
+def test_onnxruntime_intra_op_threads_size_the_real_pool(onnx_model, threads):
+    model, path = onnx_model
+    default = pb.create_backend("onnxruntime", str(path), providers=["CPUExecutionProvider"])
+    assert default._session.get_session_options().intra_op_num_threads == 0
+    default.close()
+
+    before = _thread_ids()
+    backend = pb.create_backend(
+        "onnxruntime", str(path), providers=["CPUExecutionProvider"], intra_op_threads=threads
+    )
+    created = _thread_ids() - before
+    assert backend._session.get_session_options().intra_op_num_threads == threads
+    assert len(created) == threads - 1, "the pool counts the calling thread"
+    for tid in created:  # an explicit size is not pinned: each worker may use every allowed core
+        assert os.sched_getaffinity(tid) == os.sched_getaffinity(0)
+    x = np.random.default_rng(2).standard_normal(pb.INPUT_SHAPE).astype(np.float32)
+    np.testing.assert_allclose(backend.infer(x), _reference(model, x), atol=1e-5)
+    backend.close()
 
 
 @needs_torch
